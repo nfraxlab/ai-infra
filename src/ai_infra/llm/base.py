@@ -300,6 +300,36 @@ class BaseLLM:
 
         return provider, model_name
 
+    def _extract_text_from_content(self, content: str | list) -> str | None:
+        """Extract text from content that may be a string or list of content blocks.
+
+        Anthropic returns streaming content as a list of content blocks like:
+            [{'text': 'Hello', 'type': 'text', 'index': 0}]
+
+        Other providers return content as a plain string.
+
+        Args:
+            content: Either a string or a list of content block dicts
+
+        Returns:
+            Extracted text string, or None if no text content found
+        """
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            # Extract text from content blocks (Anthropic format)
+            texts = []
+            for block in content:
+                if isinstance(block, dict) and block.get("type") == "text":
+                    text = block.get("text", "")
+                    if text:
+                        texts.append(text)
+                elif isinstance(block, str):
+                    texts.append(block)
+            return "".join(texts) if texts else None
+        # Fallback: convert to string
+        return str(content) if content else None
+
     def _run_with_retry_sync(self, fn, retry_cfg):
         try:
             loop = asyncio.get_running_loop()
@@ -396,6 +426,16 @@ class BaseLLM:
         retry_cfg = (extra or {}).get("retry") if extra else None
         res = await (_with_retry_util(_call, **retry_cfg) if retry_cfg else _call())
         content = getattr(res, "content", None) or str(res)
+
+        # Handle Gemini's list content format: [{'type': 'text', 'text': '...'}]
+        if isinstance(content, list):
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict) and "text" in part:
+                    text_parts.append(part["text"])
+                elif isinstance(part, str):
+                    text_parts.append(part)
+            content = "".join(text_parts) if text_parts else str(content)
 
         # Try direct/fragment validation
         coerced = coerce_from_text_or_fragment(schema, content)
