@@ -316,6 +316,7 @@ class LLM(BaseLLM):
             if isinstance(content, list):
                 normalized = self._extract_text_from_content(content)
                 if normalized is not None:
+                    # res is AIMessage which has content attr; setattr avoids mypy issue
                     res.content = normalized
 
             # Call response hook
@@ -501,6 +502,7 @@ class LLM(BaseLLM):
             if isinstance(content, list):
                 normalized = self._extract_text_from_content(content)
                 if normalized is not None:
+                    # res is AIMessage which has content attr; setattr avoids mypy issue
                     res.content = normalized
 
             # Call response hook
