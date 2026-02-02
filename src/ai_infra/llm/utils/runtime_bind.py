@@ -59,11 +59,12 @@ def bind_model_with_tools(
     if force_once and tool_used(state):
         tool_choice = None
 
-    return model.bind_tools(
-        tools,
-        tool_choice=tool_choice,
-        parallel_tool_calls=parallel_tool_calls,
-    )
+    # Gemini doesn't support parallel_tool_calls parameter
+    bind_kwargs: dict[str, Any] = {"tool_choice": tool_choice}
+    if ctx.provider != "google_genai":
+        bind_kwargs["parallel_tool_calls"] = parallel_tool_calls
+
+    return model.bind_tools(tools, **bind_kwargs)
 
 
 def make_agent_with_context(

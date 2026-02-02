@@ -1188,14 +1188,10 @@ class Agent(BaseLLM):
             # Stream AI response content as token events
             content: str | None = None
             if isinstance(token, AIMessageChunk) and token.content:
-                # Content can be str or list - convert to string
-                content = (
-                    str(token.content) if not isinstance(token.content, str) else token.content
-                )
+                # Content can be str or list (Anthropic returns list of content blocks)
+                content = self._extract_text_from_content(token.content)
             elif hasattr(token, "content") and token.content:
-                content = (
-                    str(token.content) if not isinstance(token.content, str) else token.content
-                )
+                content = self._extract_text_from_content(token.content)
             elif isinstance(token, str) and token:
                 content = token
 

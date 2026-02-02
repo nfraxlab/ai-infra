@@ -310,6 +310,15 @@ class LLM(BaseLLM):
                 retry_cfg = (extra or {}).get("retry") if extra else None
                 res = _call() if not retry_cfg else self._run_with_retry_sync(_call, retry_cfg)
 
+            # Normalize Gemini's list content format to string
+            # Gemini returns: [{'type': 'text', 'text': '...'}] instead of a string
+            content = getattr(res, "content", None)
+            if isinstance(content, list):
+                normalized = self._extract_text_from_content(content)
+                if normalized is not None:
+                    # res is AIMessage at runtime (has content); typed as BaseModel for flexibility
+                    res.content = normalized  # type: ignore[attr-defined]
+
             # Call response hook
             duration_ms = (time.time() - start_time) * 1000
             response_ctx = ResponseContext(
@@ -486,6 +495,15 @@ class LLM(BaseLLM):
 
                 retry_cfg = (extra or {}).get("retry") if extra else None
                 res = await (_with_retry_util(_call, **retry_cfg) if retry_cfg else _call())
+
+            # Normalize Gemini's list content format to string
+            # Gemini returns: [{'type': 'text', 'text': '...'}] instead of a string
+            content = getattr(res, "content", None)
+            if isinstance(content, list):
+                normalized = self._extract_text_from_content(content)
+                if normalized is not None:
+                    # res is AIMessage at runtime (has content); typed as BaseModel for flexibility
+                    res.content = normalized  # type: ignore[attr-defined]
 
             # Call response hook
             duration_ms = (time.time() - start_time) * 1000
