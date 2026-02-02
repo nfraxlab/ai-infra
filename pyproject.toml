@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "ai-infra"
-version = "1.8.0"
+version = "1.8.1"
 description = "Infrastructure for efficient and scalable AI applications."
 authors = ["Ali Khatami <aliikhatami94@gmail.com>"]
 license = "MIT"
