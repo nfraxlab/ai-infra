@@ -316,8 +316,8 @@ class LLM(BaseLLM):
             if isinstance(content, list):
                 normalized = self._extract_text_from_content(content)
                 if normalized is not None:
-                    # res is AIMessage which has content attr; setattr avoids mypy issue
-                    res.content = normalized
+                    # res is AIMessage at runtime (has content); typed as BaseModel for flexibility
+                    res.content = normalized  # type: ignore[attr-defined]
 
             # Call response hook
             duration_ms = (time.time() - start_time) * 1000
@@ -502,8 +502,8 @@ class LLM(BaseLLM):
             if isinstance(content, list):
                 normalized = self._extract_text_from_content(content)
                 if normalized is not None:
-                    # res is AIMessage which has content attr; setattr avoids mypy issue
-                    res.content = normalized
+                    # res is AIMessage at runtime (has content); typed as BaseModel for flexibility
+                    res.content = normalized  # type: ignore[attr-defined]
 
             # Call response hook
             duration_ms = (time.time() - start_time) * 1000
