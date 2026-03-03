@@ -25,6 +25,8 @@ FILE_EXTENSIONS = {
     ".htm",
     ".xml",
     ".rst",
+    ".xlsx",
+    ".xls",
 }
 
 

@@ -51,6 +51,10 @@ from ai_infra.llm.tools.custom.retriever import (
     create_retriever_tool,
     create_retriever_tool_async,
 )
+from ai_infra.retriever.loaders import (
+    load_excel_bytes,
+    ocr_page_from_bytes,
+)
 from ai_infra.retriever.models import Chunk, SearchResult
 from ai_infra.retriever.retriever import Retriever
 
@@ -60,4 +64,6 @@ __all__ = [
     "SearchResult",
     "create_retriever_tool",
     "create_retriever_tool_async",
+    "load_excel_bytes",
+    "ocr_page_from_bytes",
 ]

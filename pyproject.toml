@@ -70,6 +70,11 @@ svc-infra = ">=0.1.0"
 # Optional local embeddings (install via extras)
 langchain-huggingface = { version = ">=1.0.0", optional = true }
 sentence-transformers = { version = ">=5.0.0", optional = true }
+# Optional OCR dependencies (pypdfium2 renders PDF pages without poppler)
+pypdfium2 = { version = ">=4.0.0", optional = true }
+pytesseract = { version = ">=0.3.13", optional = true }
+# Optional file loader dependencies
+openpyxl = { version = ">=3.1.0", optional = true }
 # Optional voice chat dependencies (microphone + playback)
 sounddevice = { version = ">=0.4.0", optional = true }
 soundfile = { version = ">=0.12.0", optional = true }
@@ -94,13 +99,15 @@ pdf = ["pypdf"]
 docx = ["python-docx"]
 html = ["beautifulsoup4"]
 csv = ["pandas"]
+excel = ["openpyxl"]
+ocr = ["pypdfium2", "pytesseract"]
 # Free local embeddings (no API key needed)
 local-embeddings = ["langchain-huggingface", "sentence-transformers"]
 huggingface = ["langchain-huggingface", "sentence-transformers"]
 # All retriever dependencies
-retriever = ["pypdf", "python-docx", "beautifulsoup4", "pandas"]
-retriever-all = ["pgvector", "psycopg2-binary", "chromadb", "pypdf", "python-docx", "beautifulsoup4", "pandas"]
-retriever-local = ["langchain-huggingface", "sentence-transformers", "pypdf", "python-docx", "beautifulsoup4", "pandas"]
+retriever = ["pypdf", "python-docx", "beautifulsoup4", "pandas", "openpyxl"]
+retriever-all = ["pgvector", "psycopg2-binary", "chromadb", "pypdf", "python-docx", "beautifulsoup4", "pandas", "openpyxl", "pypdfium2", "pytesseract"]
+retriever-local = ["langchain-huggingface", "sentence-transformers", "pypdf", "python-docx", "beautifulsoup4", "pandas", "openpyxl"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.0"

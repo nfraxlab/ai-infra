@@ -6,10 +6,12 @@ Tests file loading functionality for various formats.
 import importlib.util
 import json
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from ai_infra.retriever.loaders import (
+    _ocr_pdf_page,
     load_directory,
     load_file,
     load_json,
@@ -19,6 +21,7 @@ from ai_infra.retriever.loaders import (
 # Check for optional dependencies
 HAS_PANDAS = importlib.util.find_spec("pandas") is not None
 HAS_BS4 = importlib.util.find_spec("bs4") is not None
+HAS_OPENPYXL = importlib.util.find_spec("openpyxl") is not None
 
 
 class TestLoadFile:
@@ -471,3 +474,140 @@ class TestIntegration:
         sources = [d[1]["source"] for d in docs]
         assert any("file1.txt" in s for s in sources)
         assert any("file3.html" in s for s in sources)
+
+
+class TestOcrPdfPage:
+    """Tests for _ocr_pdf_page() OCR fallback (pypdfium2 + pytesseract)."""
+
+    def test_returns_empty_when_deps_unavailable(self, tmp_path: Path) -> None:
+        """Graceful fallback when pypdfium2/pytesseract are not installed."""
+        with patch.dict("sys.modules", {"pypdfium2": None, "pytesseract": None}):
+            result = _ocr_pdf_page(str(tmp_path / "fake.pdf"), 0)
+            assert result == ""
+
+    def test_returns_empty_on_nonexistent_file(self) -> None:
+        """Returns empty string for a nonexistent file path (caught by except)."""
+        result = _ocr_pdf_page("/nonexistent/does_not_exist.pdf", 0)
+        assert result == ""
+
+    def test_returns_empty_on_render_failure(self, tmp_path: Path) -> None:
+        """Graceful handling when pypdfium2.PdfDocument raises."""
+        mock_pdfium = MagicMock()
+        mock_pdfium.PdfDocument.side_effect = RuntimeError("corrupt pdf")
+
+        with patch.dict(
+            "sys.modules",
+            {"pypdfium2": mock_pdfium, "pytesseract": MagicMock()},
+        ):
+            result = _ocr_pdf_page(str(tmp_path / "bad.pdf"), 0)
+
+        assert result == ""
+
+
+class TestLoadExcel:
+    """Tests for load_excel() function."""
+
+    @pytest.mark.skipif(not HAS_OPENPYXL, reason="openpyxl not installed")
+    def test_single_sheet(self, tmp_path: Path) -> None:
+        """Test loading a single-sheet Excel file."""
+        from openpyxl import Workbook
+
+        from ai_infra.retriever.loaders import load_excel
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["Name", "Age"])
+        ws.append(["Alice", 30])
+        ws.append(["Bob", 25])
+        path = tmp_path / "test.xlsx"
+        wb.save(str(path))
+
+        docs = load_excel(str(path))
+
+        assert len(docs) == 1
+        text, metadata = docs[0]
+        assert "Name | Age" in text
+        assert "Alice | 30" in text
+        assert metadata["file_type"] == ".xlsx"
+        assert "sheet" in metadata
+
+    @pytest.mark.skipif(not HAS_OPENPYXL, reason="openpyxl not installed")
+    def test_multiple_sheets(self, tmp_path: Path) -> None:
+        """Test loading multi-sheet Excel file returns one doc per sheet."""
+        from openpyxl import Workbook
+
+        from ai_infra.retriever.loaders import load_excel
+
+        wb = Workbook()
+        ws1 = wb.active
+        ws1.title = "Sheet1"
+        ws1.append(["Col1"])
+        ws1.append(["val1"])
+
+        ws2 = wb.create_sheet("Sheet2")
+        ws2.append(["Col2"])
+        ws2.append(["val2"])
+
+        path = tmp_path / "multi.xlsx"
+        wb.save(str(path))
+
+        docs = load_excel(str(path))
+
+        assert len(docs) == 2
+        sheets = [d[1]["sheet"] for d in docs]
+        assert "Sheet1" in sheets
+        assert "Sheet2" in sheets
+
+    @pytest.mark.skipif(not HAS_OPENPYXL, reason="openpyxl not installed")
+    def test_skips_empty_sheets(self, tmp_path: Path) -> None:
+        """Test that completely empty sheets are skipped."""
+        from openpyxl import Workbook
+
+        from ai_infra.retriever.loaders import load_excel
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Empty"
+        # Don't add any data
+
+        ws2 = wb.create_sheet("HasData")
+        ws2.append(["Header"])
+        ws2.append(["Value"])
+
+        path = tmp_path / "sparse.xlsx"
+        wb.save(str(path))
+
+        docs = load_excel(str(path))
+
+        # Only the sheet with data should be loaded
+        assert len(docs) == 1
+        assert docs[0][1]["sheet"] == "HasData"
+
+    @pytest.mark.skipif(not HAS_OPENPYXL, reason="openpyxl not installed")
+    def test_xlsx_via_load_file(self, tmp_path: Path) -> None:
+        """Test that .xlsx files are dispatched through load_file."""
+        from openpyxl import Workbook
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["A"])
+        ws.append(["B"])
+        path = tmp_path / "via_load_file.xlsx"
+        wb.save(str(path))
+
+        docs = load_file(str(path))
+
+        assert len(docs) == 1
+        assert "A" in docs[0][0]
+
+    def test_excel_import_error_message(self) -> None:
+        """Test that ImportError provides installation instructions."""
+        try:
+            from openpyxl import Workbook  # noqa: F401
+
+            pytest.skip("openpyxl is installed, cannot test ImportError")
+        except ImportError:
+            from ai_infra.retriever.loaders import load_excel
+
+            with pytest.raises(ImportError, match="openpyxl"):
+                load_excel("test.xlsx")
