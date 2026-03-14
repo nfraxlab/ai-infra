@@ -585,6 +585,7 @@ class LLM(BaseLLM):
         max_tokens: int | None = None,
         images: list[str | bytes | Path] | None = None,
         files: list[str | bytes | Path] | None = None,
+        history: list[dict] | None = None,
         **model_kwargs,
     ):
         """Stream tokens from the model.
@@ -600,6 +601,10 @@ class LLM(BaseLLM):
             images: Optional list of images (URLs, bytes, or file paths) for vision
             files: Optional list of document files (PDFs, text files) for native file understanding.
                 Supported by Anthropic and Google providers.
+            history: Optional conversation history to prepend before the current user message.
+                Each entry is a dict with ``role`` and ``content`` keys. Use this for
+                proper multi-turn conversations where earlier turns may contain images —
+                the model sees them in context without the caller re-sending image bytes.
             **model_kwargs: Additional model kwargs
 
         Yields:
@@ -618,7 +623,7 @@ class LLM(BaseLLM):
             model_kwargs["max_tokens"] = max_tokens
         model = self.set_model(provider, model_name, **model_kwargs)
         messages = _make_messages(
-            user_msg, system, images=images, documents=files, provider=provider
+            user_msg, system, images=images, documents=files, provider=provider, history=history
         )
 
         # Build messages for callback (simplified)

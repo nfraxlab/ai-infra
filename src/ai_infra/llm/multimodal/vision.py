@@ -198,10 +198,31 @@ def _encode_string_image(image: str) -> dict[str, Any]:
         return _encode_path_image(Path(image))
 
 
-def _encode_bytes_image(image: bytes, mime_type: str = "image/png") -> dict[str, Any]:
+_MAGIC_MIME: list[tuple[bytes, str]] = [
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"\x89PNG\r\n\x1a\n", "image/png"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"RIFF", "image/webp"),  # RIFF....WEBP — checked further below
+    (b"\x00\x00\x00\x0cjP  ", "image/jp2"),
+]
+
+
+def _detect_mime_type(data: bytes) -> str:
+    """Detect image MIME type from magic bytes."""
+    for magic, mime in _MAGIC_MIME:
+        if data[: len(magic)] == magic:
+            if mime == "image/webp" and data[8:12] != b"WEBP":
+                continue
+            return mime
+    return "image/png"
+
+
+def _encode_bytes_image(image: bytes, mime_type: str | None = None) -> dict[str, Any]:
     """Encode raw bytes to base64 data URL."""
+    resolved_mime = mime_type or _detect_mime_type(image)
     b64 = base64.b64encode(image).decode("utf-8")
-    data_url = f"data:{mime_type};base64,{b64}"
+    data_url = f"data:{resolved_mime};base64,{b64}"
     return {"type": "image_url", "image_url": {"url": data_url}}
 
 
