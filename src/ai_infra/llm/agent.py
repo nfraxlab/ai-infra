@@ -967,10 +967,14 @@ class Agent(BaseLLM):
         # Merge model kwargs
         eff_kwargs = {**self._default_model_kwargs, **model_kwargs}
 
-        # Build messages
+        # Resolve effective system prompt: per-call kwarg takes precedence over constructor default.
+        # System is passed to create_react_agent as a state modifier (prompt=) so it is applied
+        # at inference time and NOT stored in the checkpointer state.  This prevents duplicate
+        # system messages when the same thread_id is reused across consecutive astream() calls.
+        eff_system = system or self._system
+
+        # Build messages (user turn only — system is handled via create_react_agent prompt)
         messages: list[dict[str, Any]] = []
-        if system:
-            messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
 
         # State for tool call accumulation
@@ -991,6 +995,7 @@ class Agent(BaseLLM):
             tools=tools,
             model_kwargs=eff_kwargs,
             config=config,
+            system=eff_system,
         ):
             # Process AIMessageChunk for tool calls
             if isinstance(token, AIMessageChunk):
@@ -1339,6 +1344,7 @@ class Agent(BaseLLM):
         extra: dict[str, Any] | None = None,
         model_kwargs: dict[str, Any] | None = None,
         tool_controls: ToolCallControls | dict[str, Any] | None = None,
+        system: str | None = None,
     ) -> tuple[Any, Any]:
         # Capture callbacks for use in wrapper closure
         callbacks = self._callbacks
@@ -1393,6 +1399,8 @@ class Agent(BaseLLM):
             interrupt_after=interrupt_after,
             # Safety limits - stored in context.extra for runtime config injection
             recursion_limit=self._recursion_limit,
+            # System prompt applied as state modifier (not stored in session state)
+            system=system,
         )
 
     def _merge_recursion_limit_config(
@@ -1699,9 +1707,10 @@ class Agent(BaseLLM):
         model_kwargs: dict[str, Any] | None = None,
         tool_controls: ToolCallControls | dict[str, Any] | None = None,
         config: dict[str, Any] | None = None,
+        system: str | None = None,
     ):
         agent, context = self._make_agent_with_context(
-            provider, model_name, tools, extra, model_kwargs, tool_controls
+            provider, model_name, tools, extra, model_kwargs, tool_controls, system=system
         )
         # Inject recursion_limit into config for safety
         merged_config = self._merge_recursion_limit_config(context, config)

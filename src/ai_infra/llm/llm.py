@@ -209,6 +209,7 @@ class LLM(BaseLLM):
         images: list[str | bytes | Path] | None = None,
         audio: Any | None = None,
         audio_output: Any | None = None,
+        files: list[str | bytes | Path] | None = None,
         **model_kwargs,
     ):
         """Send a chat message and get a response.
@@ -224,6 +225,8 @@ class LLM(BaseLLM):
             images: Optional list of images (URLs, bytes, or file paths) for vision
             audio: Optional audio input (URL, bytes, or file path) for audio understanding
             audio_output: Optional AudioOutput config to get audio response from model
+            files: Optional list of document files (PDFs, text files) for native file understanding.
+                Supported by Anthropic and Google providers.
             **model_kwargs: Additional model kwargs
 
         Returns:
@@ -301,7 +304,7 @@ class LLM(BaseLLM):
                     model = self.set_model(provider, model_name, **model_kwargs)
 
                 messages = _make_messages(
-                    user_msg, system, images=images, audio=audio, provider=provider
+                    user_msg, system, images=images, audio=audio, documents=files, provider=provider
                 )
 
                 def _call():
@@ -397,6 +400,7 @@ class LLM(BaseLLM):
         images: list[str | bytes | Path] | None = None,
         audio: Any | None = None,
         audio_output: Any | None = None,
+        files: list[str | bytes | Path] | None = None,
         **model_kwargs,
     ):
         """Async version of chat().
@@ -487,7 +491,7 @@ class LLM(BaseLLM):
                     model = self.set_model(provider, model_name, **model_kwargs)
 
                 messages = _make_messages(
-                    user_msg, system, images=images, audio=audio, provider=provider
+                    user_msg, system, images=images, audio=audio, documents=files, provider=provider
                 )
 
                 async def _call():
@@ -580,6 +584,7 @@ class LLM(BaseLLM):
         top_p: float | None = None,
         max_tokens: int | None = None,
         images: list[str | bytes | Path] | None = None,
+        files: list[str | bytes | Path] | None = None,
         **model_kwargs,
     ):
         """Stream tokens from the model.
@@ -593,6 +598,8 @@ class LLM(BaseLLM):
             top_p: Top-p sampling
             max_tokens: Maximum tokens to generate
             images: Optional list of images (URLs, bytes, or file paths) for vision
+            files: Optional list of document files (PDFs, text files) for native file understanding.
+                Supported by Anthropic and Google providers.
             **model_kwargs: Additional model kwargs
 
         Yields:
@@ -610,7 +617,9 @@ class LLM(BaseLLM):
         if max_tokens is not None:
             model_kwargs["max_tokens"] = max_tokens
         model = self.set_model(provider, model_name, **model_kwargs)
-        messages = _make_messages(user_msg, system, images=images, provider=provider)
+        messages = _make_messages(
+            user_msg, system, images=images, documents=files, provider=provider
+        )
 
         # Build messages for callback (simplified)
         messages_for_callback = [{"role": "user", "content": user_msg}]
