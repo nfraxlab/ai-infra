@@ -87,6 +87,8 @@ def make_agent_with_context(
     interrupt_after: list[str] | None = None,
     # Safety limits
     recursion_limit: int = 50,
+    # System prompt (applied as a state modifier, not stored in session state)
+    system: str | None = None,
 ) -> tuple[Any, ModelSettings]:
     """Construct an agent (LangGraph ReAct) and its runtime context.
 
@@ -182,7 +184,11 @@ def make_agent_with_context(
     def _selector(state, rt: Runtime[ModelSettings]):
         return bind_model_with_tools(state, rt, registry, global_tools=context.tools)
 
-    # Build agent with optional session/interrupt config
+    # Build agent with optional session/interrupt config.
+    # system is passed as `prompt` (a state modifier) so it is injected before
+    # every model call but NOT persisted in the checkpointer state.  This
+    # prevents duplicate system messages when the same thread_id is reused
+    # across multiple astream() / run() calls.
     agent = create_react_agent(
         model=_selector,
         tools=effective_tools,
@@ -190,6 +196,7 @@ def make_agent_with_context(
         store=store,
         interrupt_before=interrupt_before,
         interrupt_after=interrupt_after,
+        prompt=system,
     )
     return agent, context
 

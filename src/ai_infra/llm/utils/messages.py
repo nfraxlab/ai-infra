@@ -7,12 +7,16 @@ ImageInput = str | bytes | Path
 AudioInput = str | bytes | Path
 
 
+DocumentInput = str | bytes | Path
+
+
 def make_messages(
     user: str,
     system: str | None = None,
     extras: list[dict[str, Any]] | None = None,
     images: list[ImageInput] | None = None,
     audio: AudioInput | None = None,
+    documents: list[DocumentInput] | None = None,
     provider: str | None = None,  # Kept for backwards compatibility, but ignored
 ):
     """Create a list of messages for LLM chat.
@@ -23,6 +27,7 @@ def make_messages(
         extras: Optional additional messages.
         images: Optional list of images (URLs, bytes, or file paths).
         audio: Optional audio input (URL, bytes, or file path).
+        documents: Optional list of document files (PDFs, text files) for native file understanding.
         provider: Deprecated - no longer needed. Kept for backwards compatibility.
 
     Returns:
@@ -33,7 +38,7 @@ def make_messages(
         msgs.append({"role": "system", "content": system})
 
     # Handle multimodal content in user message
-    if images or audio:
+    if images or audio or documents:
         content: list[dict[str, Any]] = [{"type": "text", "text": user}]
 
         # Add images
@@ -50,6 +55,13 @@ def make_messages(
             from ai_infra.llm.multimodal.audio import encode_audio
 
             content.append(encode_audio(audio))
+
+        # Add documents
+        if documents:
+            from ai_infra.llm.multimodal.documents import encode_document
+
+            for doc in documents:
+                content.append(encode_document(doc))
 
         msgs.append({"role": "user", "content": content})
     else:

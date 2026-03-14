@@ -75,6 +75,12 @@ from ai_infra.llm.multimodal.audio_output import (
     list_audio_voices,
     parse_audio_response,
 )
+from ai_infra.llm.multimodal.documents import (
+    DocumentInput,
+    build_document_content,
+    create_document_message,
+    encode_document,
+)
 from ai_infra.llm.multimodal.models import (
     AudioFormat,
     AudioSegment,
@@ -103,6 +109,11 @@ from ai_infra.llm.multimodal.voice import (
 )
 
 __all__ = [
+    # Documents - New API
+    "create_document_message",
+    "build_document_content",
+    "encode_document",
+    "DocumentInput",
     # Vision - New API (recommended)
     "create_vision_message",
     "build_vision_content",
