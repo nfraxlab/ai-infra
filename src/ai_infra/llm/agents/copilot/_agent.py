@@ -237,7 +237,9 @@ class CopilotAgent:
         if self._external_server is not None:
             # Connect to an already-running Copilot CLI server
             try:
-                from copilot import ExternalServerConfig  # type: ignore[import-untyped]
+                from copilot import (
+                    ExternalServerConfig,  # type: ignore[import-untyped,import-not-found]
+                )
             except ImportError:
                 raise ImportError(
                     "ExternalServerConfig requires 'github-copilot-sdk'. "
@@ -767,7 +769,10 @@ class CopilotAgent:
         await self._ensure_started()
         result = await self._client.list_sessions()
         if isinstance(result, list):
-            return [s if isinstance(s, dict) else vars(s) for s in result]
+            out: list[dict[str, Any]] = []
+            for s in result:
+                out.append(s if isinstance(s, dict) else dict(vars(s)))
+            return out
         return []
 
     async def delete_session(self, session_id: str) -> None:
