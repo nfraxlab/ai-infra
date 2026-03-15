@@ -41,11 +41,15 @@ class Tool:
 
 
 try:
-    from copilot import CopilotClient as CopilotClient  # type: ignore[import-untyped,no-redef]
-    from copilot import (
-        SubprocessConfig as SubprocessConfig,  # type: ignore[import-untyped,no-redef]
+    from copilot import (  # type: ignore[import-untyped,no-redef]
+        CopilotClient as CopilotClient,
     )
-    from copilot import Tool as Tool  # type: ignore[import-untyped,no-redef]
+    from copilot import (  # type: ignore[import-untyped,no-redef]
+        SubprocessConfig as SubprocessConfig,
+    )
+    from copilot import (  # type: ignore[import-untyped,no-redef]
+        Tool as Tool,
+    )
 
     HAS_COPILOT = True
 except ImportError:
