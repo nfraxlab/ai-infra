@@ -35,9 +35,11 @@ Example - With VectorStore:
 """
 
 from ai_infra.embeddings.embeddings import Embeddings
+from ai_infra.embeddings.multimodal import MultimodalEmbeddings
 from ai_infra.embeddings.vectorstore import VectorStore
 
 __all__ = [
     "Embeddings",
+    "MultimodalEmbeddings",
     "VectorStore",
 ]

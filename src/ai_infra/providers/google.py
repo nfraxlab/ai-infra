@@ -3,12 +3,15 @@
 Google supports:
 - Chat: Gemini 2.0, 1.5 Pro/Flash models
 - Embeddings: text-embedding-004
+- Multimodal Embeddings: multimodalembedding@001 (Vertex AI)
 - TTS: Google Cloud TTS (standard, neural2, studio)
 - STT: Google Cloud Speech-to-Text
 - ImageGen: Gemini multimodal + Imagen
 - Realtime: Gemini Live API
 
 Note: TTS/STT may require GOOGLE_APPLICATION_CREDENTIALS for service account.
+Note: Multimodal embeddings use Vertex AI (multimodalembedding@001) and require
+      GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_CLOUD_PROJECT.
 """
 
 from ai_infra.providers.base import CapabilityConfig, ProviderCapability, ProviderConfig
@@ -58,6 +61,21 @@ GOOGLE = ProviderConfig(
                     "models/text-embedding-004": 768,
                     "models/embedding-001": 768,
                 }
+            },
+        ),
+        ProviderCapability.MULTIMODAL_EMBEDDINGS: CapabilityConfig(
+            models=[
+                "multimodalembedding@001",
+            ],
+            default_model="multimodalembedding@001",
+            features=["text_embedding", "image_embedding", "video_embedding"],
+            extra={
+                "dimensions": {
+                    "multimodalembedding@001": 1408,
+                },
+                "available_dimensions": [128, 256, 512, 1408],
+                "requires_vertex_ai": True,
+                "env_var_override": "GOOGLE_APPLICATION_CREDENTIALS",
             },
         ),
         ProviderCapability.TTS: CapabilityConfig(

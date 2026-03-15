@@ -1,7 +1,8 @@
 """Voyage AI provider configuration.
 
 Voyage AI supports:
-- Embeddings: High-quality embeddings optimized for RAG
+- Embeddings: High-quality text embeddings optimized for RAG
+- Multimodal Embeddings: Text + image embeddings (voyage-multimodal-3.5)
 
 Recommended by Anthropic for use with Claude models.
 """
@@ -41,6 +42,22 @@ VOYAGE = ProviderConfig(
                     "voyage-3-lite": 32000,
                     "voyage-code-3": 16000,
                 },
+            },
+        ),
+        ProviderCapability.MULTIMODAL_EMBEDDINGS: CapabilityConfig(
+            models=[
+                "voyage-multimodal-3.5",
+                "voyage-multimodal-3",
+            ],
+            default_model="voyage-multimodal-3.5",
+            features=["interleaved", "batch"],
+            extra={
+                "dimensions": {
+                    "voyage-multimodal-3.5": 1024,
+                    "voyage-multimodal-3": 1024,
+                },
+                "input_types": ["text", "image"],
+                "requires_pillow": True,
             },
         ),
     },
