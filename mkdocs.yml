@@ -69,6 +69,7 @@ nav:
       - Embeddings: embeddings/index.md
       - Image Generation: imagegen/index.md
       - Multimodal: multimodal/index.md
+      - Copilot Agent: features/copilot-agent.md
   - Tools:
       - Overview: tools/index.md
       - Custom Tools: tools/custom.md
