@@ -39,6 +39,7 @@ Convenience functions are also available at module level:
 # Import provider modules to register them
 # These are imported for their side effects (calling ProviderRegistry.register)
 from ai_infra.providers import (  # noqa: F401
+    amazon,
     anthropic,
     cohere,
     deepgram,

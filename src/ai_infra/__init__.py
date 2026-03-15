@@ -27,7 +27,7 @@ from ai_infra.callbacks import (  # Events; Built-in callbacks
     ToolErrorEvent,
     ToolStartEvent,
 )
-from ai_infra.embeddings import Embeddings, VectorStore
+from ai_infra.embeddings import Embeddings, MultimodalEmbeddings, VectorStore
 from ai_infra.embeddings.vectorstore import Document, SearchResult
 
 # Cross-cutting concerns
@@ -192,6 +192,7 @@ __all__ = [
     "Voice",
     # Embeddings
     "Embeddings",
+    "MultimodalEmbeddings",
     "VectorStore",
     "Document",
     "SearchResult",

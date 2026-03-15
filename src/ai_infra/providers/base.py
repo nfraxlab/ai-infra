@@ -29,6 +29,7 @@ class ProviderCapability(StrEnum):
 
     CHAT = "chat"  # LLM chat completions
     EMBEDDINGS = "embeddings"  # Text embeddings
+    MULTIMODAL_EMBEDDINGS = "multimodal_embeddings"  # Text + image embeddings
     TTS = "tts"  # Text-to-speech
     STT = "stt"  # Speech-to-text
     IMAGEGEN = "imagegen"  # Image generation

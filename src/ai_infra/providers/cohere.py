@@ -2,6 +2,7 @@
 
 Cohere supports:
 - Embeddings: Multilingual embeddings for search and RAG
+- Multimodal Embeddings: Text + image embeddings (embed-v4.0)
 
 Known for enterprise-focused NLP and embeddings.
 """
@@ -38,6 +39,22 @@ COHERE = ProviderConfig(
                     "classification",
                     "clustering",
                 ],
+            },
+        ),
+        ProviderCapability.MULTIMODAL_EMBEDDINGS: CapabilityConfig(
+            models=[
+                "embed-v4.0",
+                "embed-multilingual-v4.0",
+            ],
+            default_model="embed-v4.0",
+            features=["multilingual", "mixed_inputs", "128k_context"],
+            extra={
+                "dimensions": {
+                    "embed-v4.0": 1024,
+                    "embed-multilingual-v4.0": 1024,
+                },
+                "input_types": ["text", "image"],
+                "max_context_tokens": 128000,
             },
         ),
     },
