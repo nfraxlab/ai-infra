@@ -41,7 +41,7 @@
     },
     {
       "name": "achat",
-      "signature": "(user_msg: str, provider: str | None = None, model_name: str | None = None, system: str | None = None, extra: dict[str, Any] | None = None, output_schema: type[BaseModel] | dict[str, Any] | None = None, output_method: Literal['json_schema', 'json_mode', 'function_calling', 'prompt'] | None = 'prompt', images: list[str | bytes | Path] | None = None, audio: Any | None = None, audio_output: Any | None = None, model_kwargs = {})",
+      "signature": "(user_msg: str, provider: str | None = None, model_name: str | None = None, system: str | None = None, extra: dict[str, Any] | None = None, output_schema: type[BaseModel] | dict[str, Any] | None = None, output_method: Literal['json_schema', 'json_mode', 'function_calling', 'prompt'] | None = 'prompt', images: list[str | bytes | Path] | None = None, audio: Any | None = None, audio_output: Any | None = None, files: list[str | bytes | Path] | None = None, model_kwargs = {})",
       "docstring": "Async version of chat().\n\nArgs:\n    user_msg: The user's message\n    provider: LLM provider (auto-detected if None)\n    model_name: Model name (uses provider default if None)\n    system: Optional system message\n    extra: Extra options (e.g., {\"retry\": {\"max_attempts\": 3}})\n    output_schema: Pydantic model for structured output\n    output_method: How to extract structured output\n    images: Optional list of images (URLs, bytes, or file paths) for vision\n    audio: Optional audio input (URL, bytes, or file path) for audio understanding\n    audio_output: Optional AudioOutput config to get audio response from model\n    **model_kwargs: Additional model kwargs\n\nReturns:\n    Response message or structured output if output_schema provided",
       "parameters": [
         {
@@ -122,6 +122,13 @@
           "required": false
         },
         {
+          "name": "files",
+          "type": "list[str | bytes | Path] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
           "name": "model_kwargs",
           "type": null,
           "default": "{}",
@@ -138,8 +145,8 @@
     },
     {
       "name": "chat",
-      "signature": "(user_msg: str, provider: str | None = None, model_name: str | None = None, system: str | None = None, extra: dict[str, Any] | None = None, output_schema: type[BaseModel] | dict[str, Any] | None = None, output_method: Literal['json_schema', 'json_mode', 'function_calling', 'prompt'] | None = 'prompt', images: list[str | bytes | Path] | None = None, audio: Any | None = None, audio_output: Any | None = None, model_kwargs = {})",
-      "docstring": "Send a chat message and get a response.\n\nArgs:\n    user_msg: The user's message\n    provider: LLM provider (auto-detected if None)\n    model_name: Model name (uses provider default if None)\n    system: Optional system message\n    extra: Extra options (e.g., {\"retry\": {\"max_attempts\": 3}})\n    output_schema: Pydantic model for structured output\n    output_method: How to extract structured output\n    images: Optional list of images (URLs, bytes, or file paths) for vision\n    audio: Optional audio input (URL, bytes, or file path) for audio understanding\n    audio_output: Optional AudioOutput config to get audio response from model\n    **model_kwargs: Additional model kwargs\n\nReturns:\n    Response message or structured output if output_schema provided",
+      "signature": "(user_msg: str, provider: str | None = None, model_name: str | None = None, system: str | None = None, extra: dict[str, Any] | None = None, output_schema: type[BaseModel] | dict[str, Any] | None = None, output_method: Literal['json_schema', 'json_mode', 'function_calling', 'prompt'] | None = 'prompt', images: list[str | bytes | Path] | None = None, audio: Any | None = None, audio_output: Any | None = None, files: list[str | bytes | Path] | None = None, model_kwargs = {})",
+      "docstring": "Send a chat message and get a response.\n\nArgs:\n    user_msg: The user's message\n    provider: LLM provider (auto-detected if None)\n    model_name: Model name (uses provider default if None)\n    system: Optional system message\n    extra: Extra options (e.g., {\"retry\": {\"max_attempts\": 3}})\n    output_schema: Pydantic model for structured output\n    output_method: How to extract structured output\n    images: Optional list of images (URLs, bytes, or file paths) for vision\n    audio: Optional audio input (URL, bytes, or file path) for audio understanding\n    audio_output: Optional AudioOutput config to get audio response from model\n    files: Optional list of document files (PDFs, text files) for native file understanding.\n        Supported by Anthropic and Google providers.\n    **model_kwargs: Additional model kwargs\n\nReturns:\n    Response message or structured output if output_schema provided",
       "parameters": [
         {
           "name": "self",
@@ -216,6 +223,13 @@
           "type": "Any | None",
           "default": "None",
           "description": "Optional AudioOutput config to get audio response from model",
+          "required": false
+        },
+        {
+          "name": "files",
+          "type": "list[str | bytes | Path] | None",
+          "default": "None",
+          "description": "Optional list of document files (PDFs, text files) for native file understanding. Supported by Anthropic and Google providers.",
           "required": false
         },
         {
@@ -339,8 +353,8 @@
     },
     {
       "name": "stream_tokens",
-      "signature": "(user_msg: str, provider: str | None = None, model_name: str | None = None, system: str | None = None, temperature: float | None = None, top_p: float | None = None, max_tokens: int | None = None, images: list[str | bytes | Path] | None = None, model_kwargs = {})",
-      "docstring": "Stream tokens from the model.\n\nArgs:\n    user_msg: The user's message\n    provider: LLM provider (auto-detected if None)\n    model_name: Model name (uses provider default if None)\n    system: Optional system message\n    temperature: Sampling temperature\n    top_p: Top-p sampling\n    max_tokens: Maximum tokens to generate\n    images: Optional list of images (URLs, bytes, or file paths) for vision\n    **model_kwargs: Additional model kwargs\n\nYields:\n    Tuple of (token, metadata) for each token",
+      "signature": "(user_msg: str, provider: str | None = None, model_name: str | None = None, system: str | None = None, temperature: float | None = None, top_p: float | None = None, max_tokens: int | None = None, images: list[str | bytes | Path] | None = None, files: list[str | bytes | Path] | None = None, history: list[dict] | None = None, model_kwargs = {})",
+      "docstring": "Stream tokens from the model.\n\nArgs:\n    user_msg: The user's message\n    provider: LLM provider (auto-detected if None)\n    model_name: Model name (uses provider default if None)\n    system: Optional system message\n    temperature: Sampling temperature\n    top_p: Top-p sampling\n    max_tokens: Maximum tokens to generate\n    images: Optional list of images (URLs, bytes, or file paths) for vision\n    files: Optional list of document files (PDFs, text files) for native file understanding.\n        Supported by Anthropic and Google providers.\n    history: Optional conversation history to prepend before the current user message.\n        Each entry is a dict with ``role`` and ``content`` keys. Use this for\n        proper multi-turn conversations where earlier turns may contain images \u2014\n        the model sees them in context without the caller re-sending image bytes.\n    **model_kwargs: Additional model kwargs\n\nYields:\n    Tuple of (token, metadata) for each token",
       "parameters": [
         {
           "name": "self",
@@ -403,6 +417,20 @@
           "type": "list[str | bytes | Path] | None",
           "default": "None",
           "description": "Optional list of images (URLs, bytes, or file paths) for vision",
+          "required": false
+        },
+        {
+          "name": "files",
+          "type": "list[str | bytes | Path] | None",
+          "default": "None",
+          "description": "Optional list of document files (PDFs, text files) for native file understanding. Supported by Anthropic and Google providers.",
+          "required": false
+        },
+        {
+          "name": "history",
+          "type": "list[dict] | None",
+          "default": "None",
+          "description": "Optional conversation history to prepend before the current user message. Each entry is a dict with ``role`` and ``content`` keys. Use this for proper multi-turn conversations where earlier turns may contain images \u2014 the model sees them in context without the caller re-sending image bytes.",
           "required": false
         },
         {

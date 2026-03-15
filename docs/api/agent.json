@@ -881,7 +881,7 @@
     },
     {
       "name": "astream_agent_tokens",
-      "signature": "(messages: list[dict[str, Any]], provider: str, model_name: str | None = None, tools: list[Any] | None = None, extra: dict[str, Any] | None = None, model_kwargs: dict[str, Any] | None = None, tool_controls: ToolCallControls | dict[str, Any] | None = None, config: dict[str, Any] | None = None)",
+      "signature": "(messages: list[dict[str, Any]], provider: str, model_name: str | None = None, tools: list[Any] | None = None, extra: dict[str, Any] | None = None, model_kwargs: dict[str, Any] | None = None, tool_controls: ToolCallControls | dict[str, Any] | None = None, config: dict[str, Any] | None = None, system: str | None = None)",
       "docstring": null,
       "parameters": [
         {
@@ -943,6 +943,13 @@
         {
           "name": "config",
           "type": "dict[str, Any] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "system",
+          "type": "str | None",
           "default": "None",
           "description": null,
           "required": false

@@ -18,6 +18,7 @@ def make_messages(
     audio: AudioInput | None = None,
     documents: list[DocumentInput] | None = None,
     provider: str | None = None,  # Kept for backwards compatibility, but ignored
+    history: list[dict[str, Any]] | None = None,
 ):
     """Create a list of messages for LLM chat.
 
@@ -29,6 +30,9 @@ def make_messages(
         audio: Optional audio input (URL, bytes, or file path).
         documents: Optional list of document files (PDFs, text files) for native file understanding.
         provider: Deprecated - no longer needed. Kept for backwards compatibility.
+        history: Optional conversation history inserted before the current user message.
+            Each entry is a dict with ``role`` and ``content`` keys. Content may be a
+            string or a list of content blocks (e.g. image + text from a prior turn).
 
     Returns:
         List of message dicts.
@@ -36,6 +40,8 @@ def make_messages(
     msgs: list[dict[str, Any]] = []
     if system:
         msgs.append({"role": "system", "content": system})
+    if history:
+        msgs.extend(history)
 
     # Handle multimodal content in user message
     if images or audio or documents:
