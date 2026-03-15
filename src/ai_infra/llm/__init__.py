@@ -5,6 +5,14 @@ from ai_infra.llm.agent import (
     SubAgent,
     SubAgentMiddleware,
 )
+from ai_infra.llm.agents.copilot import (
+    CopilotAgent,
+    CopilotEvent,
+    CopilotResult,
+    PermissionDeniedError,
+    PermissionMode,
+    copilot_tool,
+)
 
 # Phase 6.8 - Streaming
 from ai_infra.llm.auth import (
@@ -181,4 +189,11 @@ __all__ = [
     "add_provider_mapping",
     "get_provider_env_var",
     "PROVIDER_ENV_VARS",
+    # CopilotAgent
+    "CopilotAgent",
+    "CopilotEvent",
+    "CopilotResult",
+    "PermissionDeniedError",
+    "PermissionMode",
+    "copilot_tool",
 ]
