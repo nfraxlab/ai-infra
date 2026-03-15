@@ -291,7 +291,7 @@ class MultimodalEmbeddings:
 
     def _embed_voyage(self, batch: list[MultimodalInput]) -> list[list[float]]:
         try:
-            import voyageai  # type: ignore[import-untyped]
+            import voyageai  # type: ignore[import-not-found]
         except ImportError as exc:
             raise ImportError("Voyage multimodal embeddings require: pip install voyageai") from exc
 
@@ -309,7 +309,7 @@ class MultimodalEmbeddings:
                     try:
                         import io
 
-                        from PIL import Image  # type: ignore[import-untyped]
+                        from PIL import Image  # type: ignore[import-not-found]
 
                         sequence.append(Image.open(io.BytesIO(img_bytes)))
                     except ImportError as exc:
@@ -328,7 +328,7 @@ class MultimodalEmbeddings:
 
     def _embed_cohere(self, batch: list[MultimodalInput]) -> list[list[float]]:
         try:
-            import cohere  # type: ignore[import-untyped]
+            import cohere  # type: ignore[import-not-found]
         except ImportError as exc:
             raise ImportError("Cohere multimodal embeddings require: pip install cohere") from exc
 
@@ -371,7 +371,7 @@ class MultimodalEmbeddings:
 
     def _embed_google_vertexai(self, batch: list[MultimodalInput]) -> list[list[float]]:
         try:
-            from vertexai.vision_models import (  # type: ignore[import-untyped]
+            from vertexai.vision_models import (  # type: ignore[import-not-found]
                 Image as VertexImage,
             )
             from vertexai.vision_models import (
@@ -415,7 +415,7 @@ class MultimodalEmbeddings:
 
     def _embed_amazon(self, batch: list[MultimodalInput]) -> list[list[float]]:
         try:
-            import boto3  # type: ignore[import-untyped]
+            import boto3  # type: ignore[import-not-found]
         except ImportError as exc:
             raise ImportError(
                 "Amazon Bedrock multimodal embeddings require: pip install boto3"
