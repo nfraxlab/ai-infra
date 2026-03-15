@@ -1496,6 +1496,30 @@ files = [
 smmap = ">=3.0.1,<6"
 
 [[package]]
+name = "github-copilot-sdk"
+version = "0.1.32"
+description = "Python SDK for GitHub Copilot CLI"
+optional = true
+python-versions = ">=3.11"
+groups = ["main"]
+markers = "extra == \"copilot\""
+files = [
+    {file = "github_copilot_sdk-0.1.32-py3-none-macosx_10_9_x86_64.whl", hash = "sha256:d97bc39fbd4b51e0aea3405299da1e643838ddbf6bff284f688a2d8c20d82ff8"},
+    {file = "github_copilot_sdk-0.1.32-py3-none-macosx_11_0_arm64.whl", hash = "sha256:8098592f34e7ee7decbcbb7615c7eb924471e65a3e4d0d93bc49b0d112f8ec51"},
+    {file = "github_copilot_sdk-0.1.32-py3-none-manylinux_2_28_aarch64.whl", hash = "sha256:c20cae4bec3584ce007a65a363216a1f98a71428a3ca3b76622f9e556307eed2"},
+    {file = "github_copilot_sdk-0.1.32-py3-none-manylinux_2_28_x86_64.whl", hash = "sha256:0941fd445e97a9b13fb713086c4a8c09c20ec8c7ab854cf009bd7cc213488999"},
+    {file = "github_copilot_sdk-0.1.32-py3-none-win_amd64.whl", hash = "sha256:37a82ff0908e01512052b69df4aa498332fa5769999635425015ed43cd850622"},
+    {file = "github_copilot_sdk-0.1.32-py3-none-win_arm64.whl", hash = "sha256:3199c99604e8d393b1d60905be80b84da44e70d16d30b92e2ae9b92814cdc4ae"},
+]
+
+[package.dependencies]
+pydantic = ">=2.0"
+python-dateutil = ">=2.9.0.post0"
+
+[package.extras]
+dev = ["httpx (>=0.24.0)", "pytest (>=7.0.0)", "pytest-asyncio (>=0.21.0)", "pytest-timeout (>=2.0.0)", "ruff (>=0.1.0)", "ty (>=0.0.2)"]
+
+[[package]]
 name = "gitpython"
 version = "3.1.46"
 description = "GitPython is a Python library used to interact with Git repositories"
@@ -5183,11 +5207,12 @@ version = "2.9.0.post0"
 description = "Extensions to the standard Python datetime module"
 optional = false
 python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "python-dateutil-2.9.0.post0.tar.gz", hash = "sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3"},
     {file = "python_dateutil-2.9.0.post0-py2.py3-none-any.whl", hash = "sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427"},
 ]
+markers = {main = "extra == \"copilot\""}
 
 [package.dependencies]
 six = ">=1.5"
@@ -6068,11 +6093,12 @@ version = "1.17.0"
 description = "Python 2 and 3 compatibility utilities"
 optional = false
 python-versions = "!=3.0.*,!=3.1.*,!=3.2.*,>=2.7"
-groups = ["dev"]
+groups = ["main", "dev"]
 files = [
     {file = "six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274"},
     {file = "six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81"},
 ]
+markers = {main = "extra == \"copilot\""}
 
 [[package]]
 name = "smmap"
@@ -7614,6 +7640,7 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [extras]
 anthropic = ["langchain-anthropic"]
 chroma = []
+copilot = ["github-copilot-sdk"]
 csv = []
 docx = []
 excel = ["openpyxl"]
@@ -7638,4 +7665,4 @@ xai = ["langchain-xai"]
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4.0"
-content-hash = "b143a5798b8118b8ecb5c20b33bdd80238e656c1ed961fd0121958ca5006ded6"
+content-hash = "7fac63c785f2666eb2a3ab4534fe6e6e7d96860d316c0cba4e4849a6efd937f7"
