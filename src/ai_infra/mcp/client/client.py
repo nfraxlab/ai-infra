@@ -351,6 +351,20 @@ class MCPClient:
             return f"stdio: {cfg.command or '<missing command>'} {' '.join(cfg.args or [])}"
         return f"{cfg.transport}: {cfg.url or '<missing url>'}"
 
+    @staticmethod
+    async def _resolve_headers(cfg: McpServerConfig) -> dict[str, str] | None:
+        """Return headers with a freshly resolved bearer token when token_fn is set.
+
+        Called immediately before opening each connection so that short-lived
+        OAuth tokens (e.g. from svc_infra.connect) are never stale.
+        """
+        if cfg.token_fn is None:
+            return cfg.headers
+        token = (
+            await cfg.token_fn() if asyncio.iscoroutinefunction(cfg.token_fn) else cfg.token_fn()
+        )
+        return {**(cfg.headers or {}), "Authorization": f"Bearer {token}"}
+
     # ---------- low-level open session from config ----------
 
     def _open_session_from_config(
@@ -384,11 +398,17 @@ class MCPClient:
         if t == "streamable_http":
             if not cfg.url:
                 raise ValueError("'url' is required for streamable_http")
-            parent_ctx = streamablehttp_client(cfg.url, headers=cfg.headers)
+
+            url: str = cfg.url
 
             @asynccontextmanager
             async def ctx():
-                async with parent_ctx as (read, write, _closer):
+                headers = await MCPClient._resolve_headers(cfg)
+                async with streamablehttp_client(url, headers=headers) as (
+                    read,
+                    write,
+                    _closer,
+                ):
                     async with ClientSession(read, write) as session:
                         init_result = await session.initialize()
                         info = self._extract_server_info(init_result) or {}
@@ -400,11 +420,13 @@ class MCPClient:
         if t == "sse":
             if not cfg.url:
                 raise ValueError("'url' is required for sse")
-            parent_ctx = sse_client(cfg.url, headers=cfg.headers or None)
+
+            sse_url: str = cfg.url
 
             @asynccontextmanager
             async def ctx():
-                async with parent_ctx as (read, write):
+                headers = await MCPClient._resolve_headers(cfg)
+                async with sse_client(sse_url, headers=headers or None) as (read, write):
                     async with ClientSession(read, write) as session:
                         init_result = await session.initialize()
                         info = self._extract_server_info(init_result) or {}
@@ -452,7 +474,9 @@ class MCPClient:
                         used.add(name)
                         name_map[name] = cfg
                         self._health_status[name] = "healthy"
-                except Exception as e:
+                except BaseException as e:
+                    if not isinstance(e, (Exception, BaseExceptionGroup)):
+                        raise
                     tb = "".join(traceback.format_exception(e))
                     self._errors.append(
                         {
@@ -571,10 +595,11 @@ class MCPClient:
         mapping: dict[str, Any] = {}
         for name, cfg in self._by_name.items():
             if cfg.transport == "streamable_http":
+                headers = await self._resolve_headers(cfg)
                 mapping[name] = StreamableHttpConnection(
                     transport="streamable_http",
                     url=cfg.url or "",
-                    headers=cfg.headers or None,
+                    headers=headers or None,
                 )
             elif cfg.transport == "stdio":
                 mapping[name] = StdioConnection(
@@ -584,10 +609,11 @@ class MCPClient:
                     env=cfg.env or {},
                 )
             elif cfg.transport == "sse":
+                headers = await self._resolve_headers(cfg)
                 mapping[name] = SSEConnection(
                     transport="sse",
                     url=cfg.url or "",
-                    headers=cfg.headers or None,
+                    headers=headers or None,
                 )
             else:
                 raise ValueError(f"Unknown transport: {cfg.transport}")

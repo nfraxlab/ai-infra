@@ -298,6 +298,86 @@ class TestConfigIdentity:
 # =============================================================================
 
 
+class TestResolveHeaders:
+    """Tests for _resolve_headers dynamic token injection."""
+
+    @pytest.mark.asyncio
+    async def test_no_token_fn_returns_static_headers(self):
+        """When token_fn is not set, static headers are returned unchanged."""
+        cfg = McpServerConfig(
+            transport="streamable_http",
+            url="http://localhost:3000",
+            headers={"X-Custom": "value"},
+        )
+        result = await MCPClient._resolve_headers(cfg)
+        assert result == {"X-Custom": "value"}
+
+    @pytest.mark.asyncio
+    async def test_no_token_fn_no_headers_returns_none(self):
+        """When token_fn and headers are both absent, None is returned."""
+        cfg = McpServerConfig(transport="streamable_http", url="http://localhost:3000")
+        result = await MCPClient._resolve_headers(cfg)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_sync_token_fn_injects_bearer(self):
+        """Sync token_fn result is injected as Authorization header."""
+        cfg = McpServerConfig(
+            transport="streamable_http",
+            url="http://localhost:3000",
+            token_fn=lambda: "sync-token-abc",
+        )
+        result = await MCPClient._resolve_headers(cfg)
+        assert result == {"Authorization": "Bearer sync-token-abc"}
+
+    @pytest.mark.asyncio
+    async def test_async_token_fn_injects_bearer(self):
+        """Async token_fn result is awaited and injected as Authorization header."""
+
+        async def get_token() -> str:
+            return "async-token-xyz"
+
+        cfg = McpServerConfig(
+            transport="streamable_http",
+            url="http://localhost:3000",
+            token_fn=get_token,
+        )
+        result = await MCPClient._resolve_headers(cfg)
+        assert result == {"Authorization": "Bearer async-token-xyz"}
+
+    @pytest.mark.asyncio
+    async def test_token_fn_merges_with_existing_headers(self):
+        """token_fn result is merged with pre-existing headers."""
+
+        async def get_token() -> str:
+            return "fresh-token"
+
+        cfg = McpServerConfig(
+            transport="streamable_http",
+            url="http://localhost:3000",
+            headers={"X-Tenant": "acme"},
+            token_fn=get_token,
+        )
+        result = await MCPClient._resolve_headers(cfg)
+        assert result == {"X-Tenant": "acme", "Authorization": "Bearer fresh-token"}
+
+    @pytest.mark.asyncio
+    async def test_token_fn_overrides_static_authorization(self):
+        """token_fn takes precedence over a static Authorization header."""
+
+        async def get_token() -> str:
+            return "new-token"
+
+        cfg = McpServerConfig(
+            transport="streamable_http",
+            url="http://localhost:3000",
+            headers={"Authorization": "Bearer old-token"},
+            token_fn=get_token,
+        )
+        result = await MCPClient._resolve_headers(cfg)
+        assert result == {"Authorization": "Bearer new-token"}
+
+
 class TestUniqueName:
     """Tests for unique name generation."""
 
