@@ -399,10 +399,12 @@ class MCPClient:
             if not cfg.url:
                 raise ValueError("'url' is required for streamable_http")
 
+            url: str = cfg.url
+
             @asynccontextmanager
             async def ctx():
                 headers = await MCPClient._resolve_headers(cfg)
-                async with streamablehttp_client(cfg.url, headers=headers) as (
+                async with streamablehttp_client(url, headers=headers) as (
                     read,
                     write,
                     _closer,
@@ -419,10 +421,12 @@ class MCPClient:
             if not cfg.url:
                 raise ValueError("'url' is required for sse")
 
+            sse_url: str = cfg.url
+
             @asynccontextmanager
             async def ctx():
                 headers = await MCPClient._resolve_headers(cfg)
-                async with sse_client(cfg.url, headers=headers or None) as (read, write):
+                async with sse_client(sse_url, headers=headers or None) as (read, write):
                     async with ClientSession(read, write) as session:
                         init_result = await session.initialize()
                         info = self._extract_server_info(init_result) or {}
