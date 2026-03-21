@@ -142,6 +142,7 @@ async for event in agent.stream("Run the test suite and fix failures"):
 | `turn_start` | Agent begins a reasoning turn | `turn_id` |
 | `turn_end` | Agent finishes a reasoning turn | `turn_id` |
 | `subagent` | Sub-agent lifecycle (selected / started / completed) | `subagent_name`, `subagent_phase` |
+| `todo` | Agent updated its task checklist | `todo_items` |
 | `compaction` | Context window compressed (infinite sessions) | `compaction_phase`, `tokens_removed` |
 | `task_complete` | Agent considers the task done | `content` (summary) |
 | `done` | Session turn fully complete | `content` (session ID) |
@@ -186,6 +187,54 @@ async def edit_file(path: str, content: str) -> str:
     return f"Written {path}"
 
 agent = CopilotAgent(tools=[edit_file])
+```
+
+---
+
+## Scratchpad Tools
+
+Give the agent explicit tools for recording its thinking, making the
+reasoning process visible to the UI.
+
+```python
+from ai_infra import CopilotAgent
+from ai_infra.llm.agents.copilot import create_scratchpad_tools, SCRATCHPAD_TOOL_NAMES
+
+scratchpad = create_scratchpad_tools()
+agent = CopilotAgent(tools=[*scratchpad, *my_other_tools])
+```
+
+This registers four tools:
+
+| Tool | Purpose |
+|------|---------|
+| `scratchpad_think` | Record free-form reasoning and analysis |
+| `scratchpad_plan` | Lay out a numbered plan or next steps |
+| `scratchpad_reflect` | Look back at progress, note corrections |
+| `scratchpad_read` | Read back all recorded scratchpad entries |
+
+All four share a single in-memory buffer created per
+`create_scratchpad_tools()` call, so concurrent sessions get independent
+scratchpads.
+
+### Routing scratchpad events in the UI
+
+When streaming, scratchpad tool calls appear as `tool_start` / `tool_end`
+events. Use `SCRATCHPAD_TOOL_NAMES` to detect them and route their
+content to a collapsible panel instead of the main tool timeline:
+
+```python
+from ai_infra.llm.agents.copilot import SCRATCHPAD_TOOL_NAMES
+
+async for event in agent.stream("Fix the failing tests"):
+    if event.type == "tool_start" and event.tool in SCRATCHPAD_TOOL_NAMES:
+        args = event.arguments or {}
+        thinking = args.get("thought") or args.get("plan") or args.get("reflection") or ""
+        show_in_scratchpad(thinking)
+    elif event.type == "tool_start":
+        show_tool_running(event.tool, event.arguments)
+    elif event.type == "token":
+        print(event.content, end="", flush=True)
 ```
 
 ---
@@ -454,3 +503,30 @@ CopilotAgent(
 | `READ_ONLY` | Read-only tools only; no writes or shell |
 | `INTERACTIVE` | Destructive tools require explicit approval |
 | `DENY_ALL` | No tools allowed (dry-run mode) |
+
+### `CopilotEvent`
+
+All fields default to empty/zero when not applicable to a given event type.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `type` | `str` | Event type (see [Event reference](#event-reference)) |
+| `content` | `str` | Text content (tokens, reasoning, tool output) |
+| `tool` | `str` | Tool name |
+| `arguments` | `dict` | Tool input arguments |
+| `result` | `str` | Tool execution result |
+| `cwd` | `str` | Working directory (context events) |
+| `branch` | `str` | Git branch (context events) |
+| `error` | `str` | Error message |
+| `latency_ms` | `float` | Tool execution latency |
+| `timestamp` | `float` | Event timestamp (auto-set) |
+| `reasoning_id` | `str` | Groups related reasoning chunks |
+| `subagent_name` | `str` | Sub-agent identifier |
+| `subagent_phase` | `str` | Sub-agent lifecycle phase |
+| `tokens_removed` | `int` | Tokens removed during compaction |
+| `compaction_phase` | `str` | `"start"` or `"complete"` |
+| `input_tokens` | `int` | LLM input tokens (usage events) |
+| `output_tokens` | `int` | LLM output tokens (usage events) |
+| `cost` | `float` | Estimated cost (usage events) |
+| `turn_id` | `str` | Reasoning turn identifier |
+| `todo_items` | `list[dict]` | Task checklist items (todo events) |

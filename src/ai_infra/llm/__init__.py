@@ -5,13 +5,26 @@ from ai_infra.llm.agent import (
     SubAgent,
     SubAgentMiddleware,
 )
+from ai_infra.llm.agents import (
+    HAS_COPILOT,
+    HAS_DEEPAGENTS,
+    AgentMiddleware,
+    build_deep_agent,
+    wrap_tool_with_callbacks,
+)
 from ai_infra.llm.agents.copilot import (
+    SCRATCHPAD_TOOL_NAMES,
     CopilotAgent,
     CopilotEvent,
     CopilotResult,
+    ModelCapabilities,
+    ModelInfo,
+    ModelLimits,
+    ModelSupports,
     PermissionDeniedError,
     PermissionMode,
     copilot_tool,
+    create_scratchpad_tools,
 )
 
 # Phase 6.8 - Streaming
@@ -104,13 +117,38 @@ from ai_infra.llm.workspace import Workspace, workspace
 
 __all__ = [
     "LLM",
-    "Agent",
     "BaseLLM",
     "ModelSettings",
     "Providers",
     "PROVIDER",
     "MODEL",
     "tools_from_functions",
+    # --- Agent (core LLM agent with tools, sessions, HITL) ---
+    "Agent",
+    # --- CopilotAgent (autonomous computer automation runtime) ---
+    "HAS_COPILOT",
+    "CopilotAgent",
+    "CopilotEvent",
+    "CopilotResult",
+    "PermissionDeniedError",
+    "PermissionMode",
+    "copilot_tool",
+    "ModelInfo",
+    "ModelCapabilities",
+    "ModelSupports",
+    "ModelLimits",
+    "SCRATCHPAD_TOOL_NAMES",
+    "create_scratchpad_tools",
+    # --- Deep Agent (autonomous multi-step task execution) ---
+    "HAS_DEEPAGENTS",
+    "SubAgent",
+    "CompiledSubAgent",
+    "SubAgentMiddleware",
+    "FilesystemMiddleware",
+    "AgentMiddleware",
+    "build_deep_agent",
+    # --- Callbacks ---
+    "wrap_tool_with_callbacks",
     # Multimodal
     "TTS",
     "STT",
@@ -153,11 +191,6 @@ __all__ = [
     "postgres",
     "sqlite",
     "generate_session_id",
-    # DeepAgents types
-    "SubAgent",
-    "CompiledSubAgent",
-    "SubAgentMiddleware",
-    "FilesystemMiddleware",
     # Workspace abstraction
     "Workspace",
     "workspace",
@@ -189,11 +222,4 @@ __all__ = [
     "add_provider_mapping",
     "get_provider_env_var",
     "PROVIDER_ENV_VARS",
-    # CopilotAgent
-    "CopilotAgent",
-    "CopilotEvent",
-    "CopilotResult",
-    "PermissionDeniedError",
-    "PermissionMode",
-    "copilot_tool",
 ]

@@ -1046,12 +1046,14 @@ class TestPackageExports:
     def test_all_symbols_accessible_from_package(self):
         from ai_infra.llm.agents.copilot import (
             HAS_COPILOT,
+            SCRATCHPAD_TOOL_NAMES,
             CopilotAgent,
             CopilotEvent,
             CopilotResult,
             PermissionDeniedError,
             PermissionMode,
             copilot_tool,
+            create_scratchpad_tools,
         )
 
         assert CopilotAgent is not None
@@ -1061,6 +1063,8 @@ class TestPackageExports:
         assert PermissionMode is not None
         assert PermissionDeniedError is not None
         assert copilot_tool is not None
+        assert SCRATCHPAD_TOOL_NAMES is not None
+        assert create_scratchpad_tools is not None
 
     def test_symbols_accessible_from_agents_init(self):
         from ai_infra.llm.agents import (
@@ -1161,3 +1165,92 @@ async def _run_agent_run(
 
     result = await agent.run("test prompt", session_id=provided_session_id)
     return agent, result
+
+
+# ===========================================================================
+# Scratchpad tools tests
+# ===========================================================================
+
+
+class TestScratchpadTools:
+    """Tests for create_scratchpad_tools() and SCRATCHPAD_TOOL_NAMES."""
+
+    def test_create_returns_four_tools(self):
+        from ai_infra.llm.agents.copilot import create_scratchpad_tools
+
+        tools = create_scratchpad_tools()
+        assert len(tools) == 4
+        names = {t.name for t in tools}
+        assert names == {
+            "scratchpad_think",
+            "scratchpad_plan",
+            "scratchpad_reflect",
+            "scratchpad_read",
+        }
+
+    def test_tool_names_constant_matches(self):
+        from ai_infra.llm.agents.copilot import SCRATCHPAD_TOOL_NAMES, create_scratchpad_tools
+
+        tools = create_scratchpad_tools()
+        assert {t.name for t in tools} == set(SCRATCHPAD_TOOL_NAMES)
+
+    def test_all_tools_skip_permission(self):
+        from ai_infra.llm.agents.copilot import create_scratchpad_tools
+
+        for t in create_scratchpad_tools():
+            assert t.skip_permission is True, f"{t.name} should skip_permission"
+
+    def test_think_records_and_read_returns(self):
+        from ai_infra.llm.agents.copilot import create_scratchpad_tools
+
+        tools = create_scratchpad_tools()
+        by_name = {t.name: t for t in tools}
+
+        result = by_name["scratchpad_think"].fn(thought="Let me analyze the bug")
+        assert result == "Recorded."
+
+        read_result = by_name["scratchpad_read"].fn()
+        assert "Let me analyze the bug" in read_result
+
+    def test_plan_records(self):
+        from ai_infra.llm.agents.copilot import create_scratchpad_tools
+
+        tools = create_scratchpad_tools()
+        by_name = {t.name: t for t in tools}
+
+        by_name["scratchpad_plan"].fn(plan="1. Read code\n2. Fix bug\n3. Test")
+        read = by_name["scratchpad_read"].fn()
+        assert "1. Read code" in read
+
+    def test_reflect_records(self):
+        from ai_infra.llm.agents.copilot import create_scratchpad_tools
+
+        tools = create_scratchpad_tools()
+        by_name = {t.name: t for t in tools}
+
+        by_name["scratchpad_reflect"].fn(reflection="The approach worked well")
+        read = by_name["scratchpad_read"].fn()
+        assert "approach worked well" in read
+
+    def test_read_empty_scratchpad(self):
+        from ai_infra.llm.agents.copilot import create_scratchpad_tools
+
+        tools = create_scratchpad_tools()
+        by_name = {t.name: t for t in tools}
+
+        result = by_name["scratchpad_read"].fn()
+        assert result == "(scratchpad is empty)"
+
+    def test_independent_instances(self):
+        """Each create_scratchpad_tools() call gets its own buffer."""
+        from ai_infra.llm.agents.copilot import create_scratchpad_tools
+
+        tools_a = create_scratchpad_tools()
+        tools_b = create_scratchpad_tools()
+
+        by_name_a = {t.name: t for t in tools_a}
+        by_name_b = {t.name: t for t in tools_b}
+
+        by_name_a["scratchpad_think"].fn(thought="session A only")
+        read_b = by_name_b["scratchpad_read"].fn()
+        assert read_b == "(scratchpad is empty)"

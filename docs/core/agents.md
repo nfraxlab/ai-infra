@@ -111,9 +111,25 @@ async for event in agent.astream("What is the refund policy?"):
 ### Visibility Levels
 
 - `minimal`: tokens only
-- `standard`: tokens + tool names (default)
-- `detailed`: include tool arguments
+- `standard`: tokens + tool names + reasoning (default)
+- `detailed`: include tool arguments and full tool results
 - `debug`: include tool result previews
+
+### Reasoning Events
+
+By default, text the model emits before or between tool calls is
+classified as `reasoning` events instead of `token` events. This
+lets you show the agent's "thinking" separately from its answer:
+
+```python
+async for event in agent.astream("Analyse the auth module"):
+    if event.type == "reasoning":
+        show_thinking(event.content)  # Pre-tool narration
+    elif event.type == "token":
+        print(event.content, end="", flush=True)  # Final answer
+```
+
+Disable with `stream_config=StreamConfig(include_reasoning=False)`.
 
 ```python
 async for event in agent.astream("Search docs", visibility="detailed"):

@@ -53,6 +53,11 @@ class CopilotEvent:
         The agent has begun a new reasoning turn. Read ``turn_id``.
     ``turn_end``
         The agent has finished a reasoning turn. Read ``turn_id``.
+    ``todo``
+        The agent is reporting its current todo / plan list. Read
+        ``todo_items`` — a list of dicts with ``id``, ``title``, and
+        ``status`` (one of ``"not-started"``, ``"in-progress"``,
+        ``"completed"``).
     ``task_complete``
         The agent considers its assigned task fully complete. Read
         ``content`` for the task summary.
@@ -87,6 +92,8 @@ class CopilotEvent:
         output_tokens: Output tokens produced (``usage`` events).
         cost: Model multiplier cost (``usage`` events from billing).
         turn_id: Turn identifier (``turn_start`` / ``turn_end`` events).
+        todo_items: List of todo dicts (``todo`` events). Each dict has
+            ``id`` (int), ``title`` (str), and ``status`` (str).
     """
 
     type: Literal[
@@ -105,6 +112,7 @@ class CopilotEvent:
         "usage",
         "turn_start",
         "turn_end",
+        "todo",
         "task_complete",
     ]
     content: str = ""
@@ -130,6 +138,8 @@ class CopilotEvent:
     cost: float = 0.0
     # turn events
     turn_id: str = ""
+    # todo events
+    todo_items: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass

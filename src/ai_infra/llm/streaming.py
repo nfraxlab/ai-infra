@@ -28,7 +28,12 @@ class StreamEvent:
 
     Event types:
         - thinking: Agent started processing (emitted once at start)
-        - token: Text content chunk from the LLM response
+        - reasoning: Model's internal reasoning/narration before or between tool calls.
+            Text the model emits *before* its first tool call or *between*
+            consecutive tool calls is classified as reasoning.  This gives
+            consumers a "thinking out loud" stream they can show in a
+            collapsed panel.  Reasoning is NOT part of the final answer.
+        - token: Text content chunk from the LLM response (the final answer)
         - tool_start: Tool execution started (name, arguments based on visibility)
         - tool_end: Tool execution completed (with timing, optional results)
         - done: Streaming completed (with summary stats)
@@ -68,6 +73,9 @@ class StreamEvent:
         # Token event
         StreamEvent(type="token", content="Hello")
 
+        # Reasoning event (model narration before tool call)
+        StreamEvent(type="reasoning", content="Let me search the docs for that.")
+
         # Tool start event
         StreamEvent(type="tool_start", tool="search_docs", tool_id="call_abc123")
 
@@ -94,7 +102,7 @@ class StreamEvent:
         StreamEvent(type="done", tools_called=2)
     """
 
-    type: Literal["thinking", "token", "tool_start", "tool_end", "done", "error"]
+    type: Literal["thinking", "reasoning", "token", "tool_start", "tool_end", "done", "error"]
 
     # Type-specific data
     content: str | None = None  # token content
@@ -186,7 +194,16 @@ class StreamConfig:
     Attributes:
         visibility: Event detail level (minimal/standard/detailed/debug)
         include_thinking: Whether to emit "thinking" event at start
+        include_reasoning: Whether to classify pre/inter-tool tokens as
+            "reasoning" events instead of "token" events. When True,
+            text the model emits before its first tool call or between
+            consecutive tool calls is yielded as StreamEvent(type="reasoning").
+            Defaults to True.
         include_tool_events: Whether to emit tool_start/tool_end events
+        reasoning_token_limit: Maximum chars to buffer as reasoning before
+            flushing as answer tokens (default 300).  If the model emits
+            more than this many chars without calling a tool, the text is
+            re-classified as a direct answer (token events).
         tool_result_preview_length: Max chars for tool result preview (debug)
         deduplicate_tool_starts: Prevent duplicate tool_start for same call
 
@@ -205,7 +222,11 @@ class StreamConfig:
 
     # Event filtering
     include_thinking: bool = True
+    include_reasoning: bool = True
     include_tool_events: bool = True
+
+    # Reasoning classifier
+    reasoning_token_limit: int = 300
 
     # Tool handling
     tool_result_preview_length: int = 500
@@ -224,6 +245,7 @@ _VISIBILITY_LEVELS: dict[str, int] = {
 _EVENT_VISIBILITY_REQUIREMENTS: dict[str, int] = {
     "token": 0,  # Always emit tokens
     "thinking": 1,  # standard+
+    "reasoning": 1,  # standard+
     "tool_start": 1,  # standard+
     "tool_end": 1,  # standard+
     "done": 1,  # standard+

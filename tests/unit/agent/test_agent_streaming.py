@@ -71,6 +71,16 @@ class TestStreamConfig:
         config = StreamConfig(deduplicate_tool_starts=False)
         assert config.deduplicate_tool_starts is False
 
+    def test_include_reasoning_default(self):
+        """include_reasoning defaults to True."""
+        config = StreamConfig()
+        assert config.include_reasoning is True
+
+    def test_reasoning_token_limit(self):
+        """reasoning_token_limit can be customized."""
+        config = StreamConfig(reasoning_token_limit=500)
+        assert config.reasoning_token_limit == 500
+
 
 # =============================================================================
 # Token Streaming Tests
@@ -400,3 +410,182 @@ class TestStreamErrorHandling:
 
         done_events = [e for e in events if e.type == "done"]
         assert len(done_events) == 1
+
+
+# =============================================================================
+# Reasoning Event Tests
+# =============================================================================
+
+
+class TestReasoningEvents:
+    """Tests for reasoning/narration classification in astream()."""
+
+    @pytest.mark.asyncio
+    async def test_pre_tool_text_emitted_as_reasoning(self):
+        """Text before a tool call is classified as reasoning."""
+        token_stream = [
+            (AIMessageChunk(content="Let me search for that."), {}),
+            (
+                AIMessageChunk(
+                    content="",
+                    tool_call_chunks=[
+                        {"index": 0, "id": "call-r1", "name": "search", "args": '{"q":"test"}'}
+                    ],
+                ),
+                {},
+            ),
+            (ToolMessage(content="found it", tool_call_id="call-r1", name="search"), {}),
+            (AIMessageChunk(content="Here is the answer."), {}),
+        ]
+
+        agent = MockStreamingAgent(token_stream)
+        events = [
+            event
+            async for event in agent.astream(
+                "hello",
+                provider="openai",
+                stream_config=StreamConfig(visibility="standard", include_reasoning=True),
+            )
+        ]
+
+        reasoning_events = [e for e in events if e.type == "reasoning"]
+        assert len(reasoning_events) == 1
+        assert reasoning_events[0].content == "Let me search for that."
+
+        token_events = [e for e in events if e.type == "token"]
+        assert len(token_events) == 1
+        assert token_events[0].content == "Here is the answer."
+
+    @pytest.mark.asyncio
+    async def test_inter_tool_text_emitted_as_reasoning(self):
+        """Text between tool calls is classified as reasoning."""
+        token_stream = [
+            (AIMessageChunk(content="Checking docs."), {}),
+            (
+                AIMessageChunk(
+                    content="",
+                    tool_call_chunks=[
+                        {"index": 0, "id": "call-a", "name": "search", "args": '{"q":"a"}'}
+                    ],
+                ),
+                {},
+            ),
+            (ToolMessage(content="result-a", tool_call_id="call-a", name="search"), {}),
+            (AIMessageChunk(content="Now checking code."), {}),
+            (
+                AIMessageChunk(
+                    content="",
+                    tool_call_chunks=[
+                        {"index": 0, "id": "call-b", "name": "read_file", "args": '{"f":"x.py"}'}
+                    ],
+                ),
+                {},
+            ),
+            (ToolMessage(content="result-b", tool_call_id="call-b", name="read_file"), {}),
+            (AIMessageChunk(content="Done."), {}),
+        ]
+
+        agent = MockStreamingAgent(token_stream)
+        events = [
+            event
+            async for event in agent.astream(
+                "hello",
+                provider="openai",
+                stream_config=StreamConfig(visibility="standard", include_reasoning=True),
+            )
+        ]
+
+        reasoning_events = [e for e in events if e.type == "reasoning"]
+        assert len(reasoning_events) == 2
+        assert reasoning_events[0].content == "Checking docs."
+        assert reasoning_events[1].content == "Now checking code."
+
+        token_events = [e for e in events if e.type == "token"]
+        assert len(token_events) == 1
+        assert token_events[0].content == "Done."
+
+    @pytest.mark.asyncio
+    async def test_buffer_overflow_reclassifies_as_token(self):
+        """When text exceeds reasoning_token_limit without a tool call, it becomes tokens."""
+        long_text = "A" * 400  # Exceeds default 300 limit
+        token_stream = [
+            (AIMessageChunk(content=long_text), {}),
+        ]
+
+        agent = MockStreamingAgent(token_stream)
+        events = [
+            event
+            async for event in agent.astream(
+                "hello",
+                provider="openai",
+                stream_config=StreamConfig(
+                    visibility="standard",
+                    include_reasoning=True,
+                    reasoning_token_limit=300,
+                ),
+            )
+        ]
+
+        reasoning_events = [e for e in events if e.type == "reasoning"]
+        assert len(reasoning_events) == 0
+
+        token_events = [e for e in events if e.type == "token"]
+        assert len(token_events) >= 1
+
+    @pytest.mark.asyncio
+    async def test_no_tool_short_text_becomes_token(self):
+        """Short text without any tool calls becomes token (flushed at end)."""
+        token_stream = [
+            (AIMessageChunk(content="Just a direct answer."), {}),
+        ]
+
+        agent = MockStreamingAgent(token_stream)
+        events = [
+            event
+            async for event in agent.astream(
+                "hello",
+                provider="openai",
+                stream_config=StreamConfig(visibility="standard", include_reasoning=True),
+            )
+        ]
+
+        reasoning_events = [e for e in events if e.type == "reasoning"]
+        assert len(reasoning_events) == 0
+
+        token_events = [e for e in events if e.type == "token"]
+        assert len(token_events) == 1
+        assert token_events[0].content == "Just a direct answer."
+
+    @pytest.mark.asyncio
+    async def test_reasoning_disabled(self):
+        """When include_reasoning=False, all text is emitted as token events."""
+        token_stream = [
+            (AIMessageChunk(content="Thinking..."), {}),
+            (
+                AIMessageChunk(
+                    content="",
+                    tool_call_chunks=[
+                        {"index": 0, "id": "call-d", "name": "search", "args": '{"q":"x"}'}
+                    ],
+                ),
+                {},
+            ),
+            (ToolMessage(content="ok", tool_call_id="call-d", name="search"), {}),
+            (AIMessageChunk(content="Answer."), {}),
+        ]
+
+        agent = MockStreamingAgent(token_stream)
+        events = [
+            event
+            async for event in agent.astream(
+                "hello",
+                provider="openai",
+                stream_config=StreamConfig(visibility="standard", include_reasoning=False),
+            )
+        ]
+
+        reasoning_events = [e for e in events if e.type == "reasoning"]
+        assert len(reasoning_events) == 0
+
+        token_events = [e for e in events if e.type == "token"]
+        assert len(token_events) == 2

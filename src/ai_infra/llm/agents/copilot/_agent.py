@@ -140,6 +140,23 @@ class CopilotAgent:
         reasoning_effort: Chain-of-thought depth for models that support it.
             One of ``"low"``, ``"medium"``, ``"high"``, ``"xhigh"``.
             Call ``list_models()`` to check which models accept this option.
+        on_list_models: Custom handler for ``CopilotClient.list_models()``. When
+            provided, the CLI's built-in model list RPC is replaced entirely.
+            Return a list of ``ModelInfo`` objects describing your provider's
+            models. Essential for BYOK to declare reasoning support::
+
+                from ai_infra.llm.agents.copilot import ModelInfo
+                agent = CopilotAgent(
+                    provider={"type": "anthropic", ...},
+                    on_list_models=lambda: [ModelInfo(
+                        id="claude-sonnet-4-5",
+                        name="Claude Sonnet 4.5",
+                        capabilities=ModelCapabilities(
+                            supports=ModelSupports(vision=True, reasoning_effort=True),
+                            limits=ModelLimits(max_context_window_tokens=200_000),
+                        ),
+                    )],
+                )
         on_user_input: Async callable invoked when the agent needs to ask the
             user a question (enables Copilot's ``ask_user`` tool). Receives
             ``(request, invocation)`` where ``request["question"]`` is the
@@ -188,6 +205,7 @@ class CopilotAgent:
         callbacks: Callbacks | None = None,
         # ---- extended config ----
         reasoning_effort: str | None = None,
+        on_list_models: Callable | None = None,
         on_user_input: Callable | None = None,
         hooks: dict[str, Callable] | None = None,
         telemetry: dict[str, Any] | None = None,
@@ -214,6 +232,7 @@ class CopilotAgent:
         self._infinite_context = infinite_context
         self._callbacks = callbacks
         self._reasoning_effort = reasoning_effort
+        self._on_list_models = on_list_models
         self._on_user_input = on_user_input
         self._extra_hooks = hooks
         self._telemetry = telemetry
@@ -255,7 +274,10 @@ class CopilotAgent:
                 **({"telemetry": self._telemetry} if self._telemetry else {}),
             )
 
-        self._client = CopilotClient(server_config)
+        client_kwargs: dict[str, Any] = {}
+        if self._on_list_models is not None:
+            client_kwargs["on_list_models"] = self._on_list_models
+        self._client = CopilotClient(server_config, **client_kwargs)
         await self._client.start()
         self._started = True
         logger.debug("CopilotAgent: CLI process started (cwd=%s)", self._cwd)
@@ -574,16 +596,36 @@ class CopilotAgent:
                     if content:
                         self._fire_token(content)
                         return CopilotEvent(type="token", content=content)
+                # Check for reasoning_text on the completed message
+                reasoning_text = _get("reasoning_text")
+                if reasoning_text:
+                    return CopilotEvent(
+                        type="reasoning", content=reasoning_text, reasoning_id=_get("reasoning_id")
+                    )
+
+            elif event_type == "assistant.streaming_delta":
+                # Unified streaming delta — may carry token or reasoning content
+                delta = _get("delta_content")
+                reasoning_text = _get("reasoning_text")
+                if reasoning_text:
+                    return CopilotEvent(
+                        type="reasoning_delta",
+                        content=reasoning_text,
+                        reasoning_id=_get("reasoning_id"),
+                    )
+                if delta:
+                    self._fire_token(delta)
+                    return CopilotEvent(type="token", content=delta)
 
             elif event_type == "assistant.reasoning_delta":
-                delta = _get("delta_content")
+                delta = _get("delta_content") or _get("reasoning_text")
                 if delta:
                     return CopilotEvent(
                         type="reasoning_delta", content=delta, reasoning_id=_get("reasoning_id")
                     )
 
             elif event_type == "assistant.reasoning":
-                content = _get("content")
+                content = _get("content") or _get("reasoning_text")
                 if content:
                     return CopilotEvent(
                         type="reasoning", content=content, reasoning_id=_get("reasoning_id")
@@ -597,13 +639,24 @@ class CopilotAgent:
             elif event_type == "tool.execution_start":
                 tool_name = _get("tool_name")
                 call_id = _get("tool_call_id", tool_name)
-                args = _get("arguments", {})
+                raw_args = _get("arguments", {})
+                if isinstance(raw_args, dict):
+                    args = raw_args
+                elif isinstance(raw_args, str):
+                    import json as _json
+
+                    try:
+                        args = _json.loads(raw_args)
+                    except (ValueError, TypeError):
+                        args = {}
+                else:
+                    args = {}
                 tool_start_times[call_id] = time.monotonic()
-                self._fire_tool_start(tool_name, args if isinstance(args, dict) else {})
+                self._fire_tool_start(tool_name, args)
                 return CopilotEvent(
                     type="tool_start",
                     tool=tool_name,
-                    arguments=args if isinstance(args, dict) else {},
+                    arguments=args,
                 )
 
             elif event_type == "tool.execution_partial_result":
@@ -697,11 +750,53 @@ class CopilotAgent:
             elif event_type == "session.idle":
                 return CopilotEvent(type="done")
 
+            elif event_type not in (
+                "session.start",
+                "session.resume",
+                "session.info",
+                "session.warning",
+                "session.title_changed",
+                "session.usage_info",
+                "session.shutdown",
+                "session.skills_loaded",
+                "session.mcp_servers_loaded",
+                "session.tools_updated",
+                "session.extensions_loaded",
+                "session.mcp_server_status_changed",
+                "session.mode_changed",
+                "session.model_change",
+                "session.plan_changed",
+                "session.workspace_file_changed",
+                "session.truncation",
+                "session.snapshot_rewind",
+                "session.background_tasks_changed",
+                "session.handoff",
+                "user.message",
+                "system.message",
+                "system.notification",
+                "skill.invoked",
+                "hook.start",
+                "hook.end",
+                "commands.changed",
+                "permission.requested",
+                "permission.completed",
+                "abort",
+                "unknown",
+            ):
+                logger.info("copilot unhandled event type: %s", event_type)
+
             return None
 
         def _on_event(raw: Any) -> None:
+            raw_type = str(raw.type.value) if hasattr(raw.type, "value") else str(raw.type)
+            logger.debug("copilot raw event: type=%s", raw_type)
             translated = _translate(raw)
             if translated is not None:
+                logger.debug(
+                    "copilot translated: type=%s content=%s",
+                    translated.type,
+                    (translated.content or "")[:80],
+                )
                 if translated.type == "done":
                     queue.put_nowait(translated)
                     queue.put_nowait(None)  # sentinel

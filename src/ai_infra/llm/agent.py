@@ -983,6 +983,18 @@ class Agent(BaseLLM):
         accumulating_tool_calls: dict[int, dict[str, Any]] = {}  # index -> {id, name, args_str}
         tools_called = 0
 
+        # Reasoning classifier state.
+        # Tokens before the first tool call or between consecutive tool calls
+        # are the model's internal narration/reasoning.  We buffer them and
+        # flush as a single `reasoning` event when the next tool_start arrives.
+        _reasoning_buf: list[str] = []
+        _reasoning_chars = 0
+        _streaming_answer = False  # True once buffer overflows → stream tokens directly
+        _reasoning_limit = cfg.reasoning_token_limit
+        _classify_reasoning = cfg.include_reasoning and should_emit_event(
+            "reasoning", eff_visibility
+        )
+
         # Emit "thinking" event at start
         if cfg.include_thinking and should_emit_event("thinking", eff_visibility):
             yield StreamEvent(type="thinking", model=eff_model)
@@ -1050,13 +1062,15 @@ class Agent(BaseLLM):
                             if cfg.include_tool_events and should_emit_event(
                                 "tool_start", eff_visibility
                             ):
-                                # Debug: Log what we're emitting
-                                import logging
-
-                                logger = logging.getLogger(__name__)
-                                logger.info(
-                                    f" Emitting tool_start: tool={acc_name}, visibility={eff_visibility}, has_args={tc_args is not None}, args={tc_args}"
-                                )
+                                # Flush buffered narration as a reasoning event.
+                                if _classify_reasoning and _reasoning_buf:
+                                    yield StreamEvent(
+                                        type="reasoning",
+                                        content="".join(_reasoning_buf),
+                                    )
+                                    _reasoning_buf.clear()
+                                    _reasoning_chars = 0
+                                _streaming_answer = False
 
                                 event = StreamEvent(
                                     type="tool_start",
@@ -1115,6 +1129,16 @@ class Agent(BaseLLM):
                         tc_args = {}
 
                     if cfg.include_tool_events and should_emit_event("tool_start", eff_visibility):
+                        # Flush buffered narration as a reasoning event.
+                        if _classify_reasoning and _reasoning_buf:
+                            yield StreamEvent(
+                                type="reasoning",
+                                content="".join(_reasoning_buf),
+                            )
+                            _reasoning_buf.clear()
+                            _reasoning_chars = 0
+                        _streaming_answer = False
+
                         event = StreamEvent(
                             type="tool_start",
                             tool=tc_name,
@@ -1188,9 +1212,15 @@ class Agent(BaseLLM):
                     )
                     yield filter_event_for_visibility(event, eff_visibility)
 
+                # Reset reasoning buffer so inter-tool narration is captured.
+                if _classify_reasoning:
+                    _streaming_answer = False
+                    _reasoning_buf.clear()
+                    _reasoning_chars = 0
+
                 continue
 
-            # Stream AI response content as token events
+            # Stream AI response content — classify as reasoning or token.
             content: str | None = None
             if isinstance(token, AIMessageChunk) and token.content:
                 # Content can be str or list (Anthropic returns list of content blocks)
@@ -1200,8 +1230,28 @@ class Agent(BaseLLM):
             elif isinstance(token, str) and token:
                 content = token
 
-            if content and should_emit_event("token", eff_visibility):
-                yield StreamEvent(type="token", content=content)
+            if content:
+                if _classify_reasoning and not _streaming_answer:
+                    # Buffer as potential reasoning (pre/inter-tool narration).
+                    _reasoning_buf.append(content)
+                    _reasoning_chars += len(content)
+                    if _reasoning_chars >= _reasoning_limit:
+                        # Exceeded limit without a tool call — re-classify
+                        # all buffered text as answer tokens.
+                        _streaming_answer = True
+                        for chunk in _reasoning_buf:
+                            if should_emit_event("token", eff_visibility):
+                                yield StreamEvent(type="token", content=chunk)
+                        _reasoning_buf.clear()
+                elif should_emit_event("token", eff_visibility):
+                    yield StreamEvent(type="token", content=content)
+
+        # Flush remaining reasoning buffer as answer tokens (final answer).
+        if _reasoning_buf:
+            for chunk in _reasoning_buf:
+                if should_emit_event("token", eff_visibility):
+                    yield StreamEvent(type="token", content=chunk)
+            _reasoning_buf.clear()
 
         # Emit done event
         if should_emit_event("done", eff_visibility):
