@@ -200,13 +200,14 @@ class TestStreamCancellation:
 
         async def consume_and_cancel() -> list[StreamEvent]:
             """Consume stream and cancel after first event."""
-            events = []
+            events: list[StreamEvent] = []
             task = asyncio.current_task()
             async for event in agent.astream("test", provider="openai"):
                 events.append(event)
                 if len(events) >= 2:
                     if task:
                         task.cancel()
+                    await asyncio.sleep(0)  # yield so CancelledError is raised
             return events
 
         with pytest.raises(asyncio.CancelledError):
