@@ -93,6 +93,7 @@ from ai_infra.llm.memory import (
     ContextResult,
     MemoryItem,
     MemoryStore,
+    SummarizationMiddleware,
     count_tokens,
     count_tokens_approximate,
     fit_context,
@@ -286,6 +287,7 @@ __all__ = [
     "count_tokens_approximate",
     "MemoryStore",
     "MemoryItem",
+    "SummarizationMiddleware",
     # Phase 6.8 - Streaming
     "StreamEvent",
     "StreamConfig",

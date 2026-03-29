@@ -104,7 +104,20 @@ class TestStreamDisconnect:
         # Verify collected events are valid
         for event in events:
             assert isinstance(event, StreamEvent)
-            assert event.type in ("thinking", "token", "tool_start", "tool_end", "done", "error")
+            assert event.type in (
+                "thinking",
+                "token",
+                "tool_start",
+                "tool_end",
+                "done",
+                "error",
+                "reasoning",
+                "usage",
+                "turn_start",
+                "turn_end",
+                "intent",
+                "todo",
+            )
 
     async def test_stream_generator_cleanup_on_break(self) -> None:
         """Test that generator resources are cleaned up on break."""

@@ -59,18 +59,24 @@ async def chat_ws(websocket: WebSocket):
 ## StreamEvent Reference
 
 `StreamEvent` fields (None when not applicable):
-- `type`: thinking | reasoning | token | tool_start | tool_end | done | error
-- `content`: token text or reasoning narration
+- `type`: thinking | reasoning | token | tool_start | tool_end | usage | turn_start | turn_end | intent | todo | done | error
+- `content`: token text, reasoning narration, or intent description
 - `tool` / `tool_id`: tool name and call ID
 - `arguments`: tool args (visibility detailed+)
 - `result`: **FULL tool result** (visibility detailed+) - for parsing/processing
 - `result_structured`: True if result is a structured dict (not text)
 - `preview`: truncated tool result (visibility=debug) - for UI display
 - `latency_ms`: tool latency
-- `model`: model name (thinking)
-- `tools_called`: total tools (done)
+- `model`: model name (thinking, usage)
+- `tools_called`: total tools (done, turn_end)
 - `error`: error message
+- `input_tokens` / `output_tokens`: token counts (usage events, visibility detailed+)
+- `cost`: estimated cost in USD (usage events, when pricing configured)
+- `turn_id`: turn counter, 1-indexed (turn_start/turn_end, visibility standard+)
+- `todo_items`: task checklist (todo events, visibility standard+)
 - `timestamp`: event timestamp
+
+See [Rich Agent Stream Events](agent-streaming.md) for usage, turn lifecycle, intent, and todo event details.
 
 ### Reasoning Events
 
@@ -175,8 +181,12 @@ Two fields for different use cases:
 - `include_reasoning`: classify pre/inter-tool text as reasoning events (default: True)
 - `include_tool_events`: emit tool_start/tool_end
 - `reasoning_token_limit`: max chars buffered as reasoning before reclassifying as tokens (default: 300)
+- `stream_reasoning_immediately`: emit reasoning tokens as they arrive instead of buffering (default: False)
 - `tool_result_preview_length`: max preview length (debug)
 - `deduplicate_tool_starts`: avoid duplicate starts per tool call
+- `cost_per_input_token` / `cost_per_output_token`: pricing for cost calculation in usage events
+- `tool_intent_map`: custom tool-name-to-description mapping for intent events
+- `todo_tool_name`: tool name to detect for todo events (default: `"manage_todos"`)
 
 Pass via `agent.astream(..., stream_config=StreamConfig(visibility="detailed"))`.
 

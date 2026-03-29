@@ -109,7 +109,7 @@ class TestEventOrderBasics:
             events.append(event)
 
         event_types = [e.type for e in events]
-        assert event_types == ["thinking", "token", "done"]
+        assert event_types == ["thinking", "turn_start", "token", "turn_end", "done"]
 
 
 @pytest.mark.asyncio
