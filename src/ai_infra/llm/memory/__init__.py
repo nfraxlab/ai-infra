@@ -70,6 +70,14 @@ from ai_infra.llm.memory.context import ContextResult, afit_context, fit_context
 # Long-term memory store (6.4.2)
 from ai_infra.llm.memory.store import MemoryItem, MemoryStore
 
+# Summarization utilities (6.5+)
+from ai_infra.llm.memory.summarize import (
+    SummarizationMiddleware,
+    SummarizeResult,
+    asummarize_messages,
+    summarize_messages,
+)
+
 # Token utilities (internal, but useful for advanced users)
 from ai_infra.llm.memory.tokens import count_tokens, count_tokens_approximate
 
@@ -90,6 +98,11 @@ __all__ = [
     # Token utilities (for advanced use)
     "count_tokens",
     "count_tokens_approximate",
+    # Summarization
+    "summarize_messages",
+    "asummarize_messages",
+    "SummarizeResult",
+    "SummarizationMiddleware",
     # Long-term memory store (6.4.2)
     "MemoryStore",
     "MemoryItem",

@@ -40,8 +40,18 @@ Package layout:
 
 from ai_infra.llm.agents.copilot._agent import CopilotAgent
 from ai_infra.llm.agents.copilot._events import CopilotEvent, CopilotResult
-from ai_infra.llm.agents.copilot._guard import HAS_COPILOT
+from ai_infra.llm.agents.copilot._guard import (
+    HAS_COPILOT,
+    ModelCapabilities,
+    ModelInfo,
+    ModelLimits,
+    ModelSupports,
+)
 from ai_infra.llm.agents.copilot._permissions import PermissionDeniedError, PermissionMode
+from ai_infra.llm.agents.copilot._scratchpad import (
+    SCRATCHPAD_TOOL_NAMES,
+    create_scratchpad_tools,
+)
 from ai_infra.llm.agents.copilot._tools import copilot_tool
 
 __all__ = [
@@ -49,7 +59,13 @@ __all__ = [
     "CopilotAgent",
     "CopilotEvent",
     "CopilotResult",
+    "ModelCapabilities",
+    "ModelInfo",
+    "ModelLimits",
+    "ModelSupports",
     "PermissionMode",
     "PermissionDeniedError",
+    "SCRATCHPAD_TOOL_NAMES",
     "copilot_tool",
+    "create_scratchpad_tools",
 ]

@@ -28,9 +28,19 @@ class StreamEvent:
 
     Event types:
         - thinking: Agent started processing (emitted once at start)
-        - token: Text content chunk from the LLM response
+        - reasoning: Model's internal reasoning/narration before or between tool calls.
+            Text the model emits *before* its first tool call or *between*
+            consecutive tool calls is classified as reasoning.  This gives
+            consumers a "thinking out loud" stream they can show in a
+            collapsed panel.  Reasoning is NOT part of the final answer.
+        - token: Text content chunk from the LLM response (the final answer)
         - tool_start: Tool execution started (name, arguments based on visibility)
         - tool_end: Tool execution completed (with timing, optional results)
+        - usage: Per-LLM-call token accounting (input/output tokens, cost, model)
+        - turn_start: Agent begins a new reasoning/tool-calling iteration
+        - turn_end: Agent completes a reasoning/tool-calling iteration
+        - intent: Human-readable description of current agent action
+        - todo: Agent's task checklist update
         - done: Streaming completed (with summary stats)
         - error: Error occurred during streaming
 
@@ -53,9 +63,14 @@ class StreamEvent:
                  For UI display/debugging, not parsing. Max 500 chars by default.
                  Use this for quick visual inspection during development.
         latency_ms: Tool execution time in milliseconds
-        model: Model name (for "thinking" event)
+        model: Model name (for "thinking" and "usage" events)
         tools_called: Total tools called (for "done" event)
         error: Error message (for "error" event)
+        input_tokens: Input token count (for "usage" events)
+        output_tokens: Output token count (for "usage" events)
+        cost: Estimated cost in USD (for "usage" events)
+        turn_id: Turn counter (for "turn_start", "turn_end" events)
+        todo_items: Task checklist (for "todo" events)
         timestamp: Event timestamp (Unix epoch)
 
     Visibility levels and tool results:
@@ -67,6 +82,22 @@ class StreamEvent:
     Example:
         # Token event
         StreamEvent(type="token", content="Hello")
+
+        # Reasoning event (model narration before tool call)
+        StreamEvent(type="reasoning", content="Let me search the docs for that.")
+
+        # Usage event (per-LLM-call token accounting)
+        StreamEvent(type="usage", input_tokens=1200, output_tokens=340, model="claude-sonnet-4-5")
+
+        # Turn lifecycle events
+        StreamEvent(type="turn_start", turn_id=1)
+        StreamEvent(type="turn_end", turn_id=1, tools_called=2)
+
+        # Intent event (human-readable action description)
+        StreamEvent(type="intent", content="Searching codebase")
+
+        # Todo event (task checklist)
+        StreamEvent(type="todo", todo_items=[{"id": 1, "title": "Fetch data", "status": "completed"}])
 
         # Tool start event
         StreamEvent(type="tool_start", tool="search_docs", tool_id="call_abc123")
@@ -94,7 +125,20 @@ class StreamEvent:
         StreamEvent(type="done", tools_called=2)
     """
 
-    type: Literal["thinking", "token", "tool_start", "tool_end", "done", "error"]
+    type: Literal[
+        "thinking",
+        "reasoning",
+        "token",
+        "tool_start",
+        "tool_end",
+        "usage",
+        "turn_start",
+        "turn_end",
+        "intent",
+        "todo",
+        "done",
+        "error",
+    ]
 
     # Type-specific data
     content: str | None = None  # token content
@@ -108,6 +152,17 @@ class StreamEvent:
     model: str | None = None  # model name (thinking event)
     tools_called: int | None = None  # total tools (done event)
     error: str | None = None  # error message
+
+    # Usage event fields
+    input_tokens: int | None = None  # input token count
+    output_tokens: int | None = None  # output token count
+    cost: float | None = None  # estimated cost in USD
+
+    # Turn lifecycle fields
+    turn_id: int | None = None  # turn counter (1-indexed)
+
+    # Todo event fields
+    todo_items: list[dict[str, Any]] | None = None  # task checklist
 
     # Metadata
     timestamp: float = field(default_factory=time.time)
@@ -156,6 +211,11 @@ class StreamEvent:
             "model",
             "tools_called",
             "error",
+            "input_tokens",
+            "output_tokens",
+            "cost",
+            "turn_id",
+            "todo_items",
         ]:
             val = getattr(self, field_name)
             if val is not None:
@@ -186,7 +246,16 @@ class StreamConfig:
     Attributes:
         visibility: Event detail level (minimal/standard/detailed/debug)
         include_thinking: Whether to emit "thinking" event at start
+        include_reasoning: Whether to classify pre/inter-tool tokens as
+            "reasoning" events instead of "token" events. When True,
+            text the model emits before its first tool call or between
+            consecutive tool calls is yielded as StreamEvent(type="reasoning").
+            Defaults to True.
         include_tool_events: Whether to emit tool_start/tool_end events
+        reasoning_token_limit: Maximum chars to buffer as reasoning before
+            flushing as answer tokens (default 300).  If the model emits
+            more than this many chars without calling a tool, the text is
+            re-classified as a direct answer (token events).
         tool_result_preview_length: Max chars for tool result preview (debug)
         deduplicate_tool_starts: Prevent duplicate tool_start for same call
 
@@ -205,11 +274,65 @@ class StreamConfig:
 
     # Event filtering
     include_thinking: bool = True
+    include_reasoning: bool = True
     include_tool_events: bool = True
+
+    # Reasoning classifier
+    reasoning_token_limit: int = 300
+    stream_reasoning_immediately: bool = False
+    """When True, emit reasoning tokens immediately instead of buffering.
+
+    The default behavior buffers tokens until a tool_start arrives, then
+    flushes them as a single ``reasoning`` event.  This gives the classifier
+    time to decide if the text is reasoning or a direct answer.
+
+    When ``stream_reasoning_immediately=True``, every token that *would*
+    be buffered is instead yielded immediately as a ``reasoning`` event,
+    giving consumers real-time incremental reasoning.  The reclassification
+    fallback (buffer overflow → token events) is disabled; all pre/inter-tool
+    text is assumed to be reasoning.
+
+    Best for agents that reliably use tools (e.g. always call at least one).
+    """
 
     # Tool handling
     tool_result_preview_length: int = 500
     deduplicate_tool_starts: bool = True
+
+    # Cost tracking (optional)
+    cost_per_input_token: float | None = None
+    cost_per_output_token: float | None = None
+
+    # Todo tool detection
+    todo_tool_name: str = "manage_todos"
+
+
+def _parse_todo_result(raw: Any) -> list[dict[str, Any]] | None:
+    """Extract todo items from a manage_todos tool result.
+
+    Handles both JSON-encoded strings and already-parsed structures.
+    Returns None if no items could be extracted.
+    """
+    import json as _json
+
+    data: Any = raw
+    if isinstance(data, str):
+        try:
+            data = _json.loads(data)
+        except (ValueError, TypeError):
+            return None
+
+    # Direct list of items: [{"id": 1, "title": ..., "status": ...}, ...]
+    if isinstance(data, list):
+        return data if data else None
+
+    # Dict with items/todos key: {"items": [...]} or {"todos": [...]}
+    if isinstance(data, dict):
+        for key in ("items", "todos", "todoList", "todo_items"):
+            if key in data and isinstance(data[key], list):
+                return data[key] if data[key] else None
+
+    return None
 
 
 # Visibility level numeric values for comparison
@@ -224,8 +347,14 @@ _VISIBILITY_LEVELS: dict[str, int] = {
 _EVENT_VISIBILITY_REQUIREMENTS: dict[str, int] = {
     "token": 0,  # Always emit tokens
     "thinking": 1,  # standard+
+    "reasoning": 1,  # standard+
     "tool_start": 1,  # standard+
     "tool_end": 1,  # standard+
+    "usage": 2,  # detailed+ (contains token counts)
+    "turn_start": 1,  # standard+
+    "turn_end": 1,  # standard+
+    "intent": 1,  # standard+
+    "todo": 1,  # standard+
     "done": 1,  # standard+
     "error": 0,  # Always emit errors
 }

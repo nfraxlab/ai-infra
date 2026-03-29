@@ -875,6 +875,7 @@ class Agent(BaseLLM):
         model_name: str | None = None,
         tools: list[Any] | None = None,
         system: str | None = None,
+        history: list[dict[str, Any]] | None = None,
         visibility: Literal["minimal", "standard", "detailed", "debug"] = "standard",
         stream_mode: str | list[str] = "messages",
         config: dict[str, Any] | None = None,
@@ -893,6 +894,8 @@ class Agent(BaseLLM):
             model_name: Model name (uses default if None)
             tools: Override tools (uses global tools if None)
             system: System prompt
+            history: Prior conversation turns as list of dicts with "role"
+                and "content" keys.  Prepended before the current user prompt.
 
             visibility: Event detail level
                 - "minimal": Only response tokens
@@ -951,6 +954,7 @@ class Agent(BaseLLM):
         from ai_infra.llm.streaming import (
             StreamConfig,
             StreamEvent,
+            _parse_todo_result,
             filter_event_for_visibility,
             should_emit_event,
         )
@@ -973,15 +977,43 @@ class Agent(BaseLLM):
         # system messages when the same thread_id is reused across consecutive astream() calls.
         eff_system = system or self._system
 
-        # Build messages (user turn only — system is handled via create_react_agent prompt)
+        # Build messages — prepend history turns, then the current user prompt.
+        # System is handled via create_react_agent prompt, not as a message.
         messages: list[dict[str, Any]] = []
+        if history:
+            messages.extend(history)
         messages.append({"role": "user", "content": prompt})
 
         # State for tool call accumulation
         pending_tool_calls: dict[str, float] = {}  # tool_call_id -> start_time
         emitted_tool_starts: set = set()  # Track which tool_starts we've already emitted
+        emitted_tool_args: set = set()  # Track which tools were emitted WITH arguments
         accumulating_tool_calls: dict[int, dict[str, Any]] = {}  # index -> {id, name, args_str}
         tools_called = 0
+
+        # Reasoning classifier state.
+        # Tokens before the first tool call or between consecutive tool calls
+        # are the model's internal narration/reasoning.  We buffer them and
+        # flush as a single `reasoning` event when the next tool_start arrives.
+        _reasoning_buf: list[str] = []
+        _reasoning_chars = 0
+        _streaming_answer = False  # True once buffer overflows → stream tokens directly
+        _reasoning_limit = cfg.reasoning_token_limit
+        _classify_reasoning = cfg.include_reasoning and should_emit_event(
+            "reasoning", eff_visibility
+        )
+        _stream_reasoning_now = cfg.stream_reasoning_immediately and _classify_reasoning
+        _any_tool_completed = False  # Once a tool finishes, post-tool text is answer
+
+        # Usage accumulator — tracks token counts from AIMessageChunk.usage_metadata
+        _usage_input_tokens = 0
+        _usage_output_tokens = 0
+        _has_usage = False
+
+        # Turn lifecycle tracking
+        _turn_id = 0
+        _in_turn = False  # True while processing an LLM response
+        _turn_tool_count = 0  # Tools called in current turn
 
         # Emit "thinking" event at start
         if cfg.include_thinking and should_emit_event("thinking", eff_visibility):
@@ -999,6 +1031,25 @@ class Agent(BaseLLM):
         ):
             # Process AIMessageChunk for tool calls
             if isinstance(token, AIMessageChunk):
+                # Detect turn start: first AIMessageChunk after stream start or tool completion
+                if not _in_turn:
+                    _turn_id += 1
+                    _in_turn = True
+                    _turn_tool_count = 0
+                    if should_emit_event("turn_start", eff_visibility):
+                        yield StreamEvent(type="turn_start", turn_id=_turn_id)
+
+                # Accumulate token usage from chunk metadata
+                _um = getattr(token, "usage_metadata", None)
+                if _um:
+                    _has_usage = True
+                    if isinstance(_um, dict):
+                        _usage_input_tokens += _um.get("input_tokens", 0) or 0
+                        _usage_output_tokens += _um.get("output_tokens", 0) or 0
+                    else:
+                        _usage_input_tokens += getattr(_um, "input_tokens", 0) or 0
+                        _usage_output_tokens += getattr(_um, "output_tokens", 0) or 0
+
                 tool_call_chunks = getattr(token, "tool_call_chunks", []) or []
                 tool_calls = getattr(token, "tool_calls", []) or []
 
@@ -1032,59 +1083,86 @@ class Agent(BaseLLM):
                     if tc_args_chunk:
                         acc["args_str"] += tc_args_chunk
 
-                    # Try to emit tool_start when complete
+                    # Emit tool_start as soon as the tool name is known.
+                    # Don't wait for full argument parsing — large-argument
+                    # tools (e.g. create_visualization with HTML payloads)
+                    # would otherwise delay the loading state until the
+                    # entire argument is streamed, making reasoning + tool
+                    # events arrive in a batch after tool execution.
                     acc_id = acc["id"] or acc["name"] or str(tc_index)
                     acc_name = acc["name"]
                     args_str = acc["args_str"]
 
-                    # Skip if no name yet or already emitted
-                    if not acc_name or acc_id in emitted_tool_starts:
+                    if not acc_name:
                         continue
 
-                    # Try to parse args as JSON
-                    tc_args: dict[str, Any] | None = None
-                    if args_str.strip():
+                    # First-time emit: fire immediately so the UI shows
+                    # the tool indicator without waiting for args.
+                    if acc_id not in emitted_tool_starts:
+                        if cfg.include_tool_events and should_emit_event(
+                            "tool_start", eff_visibility
+                        ):
+                            # Flush buffered narration as a reasoning event.
+                            if _classify_reasoning and _reasoning_buf:
+                                yield StreamEvent(
+                                    type="reasoning",
+                                    content="".join(_reasoning_buf),
+                                )
+                                _reasoning_buf.clear()
+                                _reasoning_chars = 0
+                            _streaming_answer = False
+                            _any_tool_completed = False  # New tool in progress
+
+                            # Best-effort parse of args so far (may be incomplete).
+                            tc_args: dict[str, Any] | None = None
+                            if args_str.strip():
+                                try:
+                                    tc_args = json.loads(args_str)
+                                except json.JSONDecodeError:
+                                    tc_args = None
+
+                            has_args = tc_args is not None and eff_visibility in (
+                                "detailed",
+                                "debug",
+                            )
+                            event = StreamEvent(
+                                type="tool_start",
+                                tool=acc_name,
+                                tool_id=acc_id,
+                                arguments=tc_args if has_args else None,
+                            )
+                            yield filter_event_for_visibility(event, eff_visibility)
+                            if has_args:
+                                emitted_tool_args.add(acc_id)
+
+                        emitted_tool_starts.add(acc_id)
+                        pending_tool_calls[acc_id] = time_module.time()
+                        tools_called += 1
+                        _turn_tool_count += 1
+                        continue
+
+                    # Re-emit with full arguments once they become parseable.
+                    # During streaming the first emit often lacks args because
+                    # the JSON is incomplete; subsequent chunks complete it.
+                    if (
+                        acc_id not in emitted_tool_args
+                        and args_str.strip()
+                        and eff_visibility in ("detailed", "debug")
+                        and not cfg.deduplicate_tool_starts
+                        and cfg.include_tool_events
+                        and should_emit_event("tool_start", eff_visibility)
+                    ):
                         try:
-                            tc_args = json.loads(args_str)
-                            # Successfully parsed - emit tool_start
-                            if cfg.include_tool_events and should_emit_event(
-                                "tool_start", eff_visibility
-                            ):
-                                # Debug: Log what we're emitting
-                                import logging
-
-                                logger = logging.getLogger(__name__)
-                                logger.info(
-                                    f" Emitting tool_start: tool={acc_name}, visibility={eff_visibility}, has_args={tc_args is not None}, args={tc_args}"
-                                )
-
-                                event = StreamEvent(
-                                    type="tool_start",
-                                    tool=acc_name,
-                                    tool_id=acc_id,
-                                    arguments=(
-                                        tc_args if eff_visibility in ("detailed", "debug") else None
-                                    ),
-                                )
-                                yield filter_event_for_visibility(event, eff_visibility)
-
-                            emitted_tool_starts.add(acc_id)
-                            pending_tool_calls[acc_id] = time_module.time()
-                            tools_called += 1
+                            tc_args_reemit = json.loads(args_str)
+                            yield StreamEvent(
+                                type="tool_start",
+                                tool=acc_name,
+                                tool_id=acc_id,
+                                arguments=tc_args_reemit,
+                            )
+                            emitted_tool_args.add(acc_id)
                         except json.JSONDecodeError:
-                            # Args still incomplete - keep accumulating
-                            pass
-                    elif not args_str:
-                        # Args not yet complete - DON'T emit tool_start yet
-                        # Wait for fully-formed tool_calls which have complete arguments
-                        # This prevents emitting tool_start with null arguments
-                        import logging
-
-                        logger = logging.getLogger(__name__)
-                        logger.debug(
-                            f" Tool {acc_name} has empty args_str - waiting for complete tool_calls"
-                        )
-                        pass
+                            pass  # Args not yet complete
 
                 # Also handle fully-formed tool_calls
                 for tc in tool_calls:
@@ -1097,12 +1175,7 @@ class Agent(BaseLLM):
                         tc_name = getattr(tc, "name", "unknown")
                         tc_args = getattr(tc, "args", {})
 
-                    # Skip if no name, no args (incomplete chunk), or already emitted
-                    # Empty args {} means LLM hasn't streamed the arguments yet
-                    if not tc_name or tc_name == "unknown" or tc_id in emitted_tool_starts:
-                        continue
-                    if not tc_args or (isinstance(tc_args, dict) and len(tc_args) == 0):
-                        # Skip incomplete tool calls with empty args (streaming in progress)
+                    if not tc_name or tc_name == "unknown":
                         continue
 
                     # Parse args if string
@@ -1114,7 +1187,38 @@ class Agent(BaseLLM):
                     elif not isinstance(tc_args, dict):
                         tc_args = {}
 
+                    # Already emitted eagerly via chunks — re-emit with
+                    # full arguments only if the eager emit lacked them.
+                    if tc_id in emitted_tool_starts:
+                        if (
+                            tc_id not in emitted_tool_args
+                            and tc_args
+                            and eff_visibility in ("detailed", "debug")
+                            and not cfg.deduplicate_tool_starts
+                            and cfg.include_tool_events
+                            and should_emit_event("tool_start", eff_visibility)
+                        ):
+                            yield StreamEvent(
+                                type="tool_start",
+                                tool=tc_name,
+                                tool_id=tc_id,
+                                arguments=tc_args,
+                            )
+                            emitted_tool_args.add(tc_id)
+                        continue
+
                     if cfg.include_tool_events and should_emit_event("tool_start", eff_visibility):
+                        # Flush buffered narration as a reasoning event.
+                        if _classify_reasoning and _reasoning_buf:
+                            yield StreamEvent(
+                                type="reasoning",
+                                content="".join(_reasoning_buf),
+                            )
+                            _reasoning_buf.clear()
+                            _reasoning_chars = 0
+                        _streaming_answer = False
+                        _any_tool_completed = False  # New tool in progress
+
                         event = StreamEvent(
                             type="tool_start",
                             tool=tc_name,
@@ -1126,9 +1230,32 @@ class Agent(BaseLLM):
                     emitted_tool_starts.add(tc_id)
                     pending_tool_calls[tc_id] = time_module.time()
                     tools_called += 1
+                    _turn_tool_count += 1
 
             # Handle tool results (ToolMessage)
             if isinstance(token, ToolMessage):
+                # Emit usage event for the preceding LLM call (once per LLM turn)
+                if _has_usage and should_emit_event("usage", eff_visibility):
+                    _cost = None
+                    if (
+                        cfg.cost_per_input_token is not None
+                        and cfg.cost_per_output_token is not None
+                    ):
+                        _cost = (
+                            _usage_input_tokens * cfg.cost_per_input_token
+                            + _usage_output_tokens * cfg.cost_per_output_token
+                        )
+                    yield StreamEvent(
+                        type="usage",
+                        input_tokens=_usage_input_tokens,
+                        output_tokens=_usage_output_tokens,
+                        cost=_cost,
+                        model=eff_model,
+                    )
+                    _usage_input_tokens = 0
+                    _usage_output_tokens = 0
+                    _has_usage = False
+
                 tc_id = getattr(token, "tool_call_id", "")
                 tc_name = getattr(token, "name", "tool")
 
@@ -1188,9 +1315,33 @@ class Agent(BaseLLM):
                     )
                     yield filter_event_for_visibility(event, eff_visibility)
 
+                # Emit todo event when the completed tool is the todo tool
+                if tc_name == cfg.todo_tool_name and should_emit_event("todo", eff_visibility):
+                    _todo_items = _parse_todo_result(token.content)
+                    if _todo_items:
+                        yield StreamEvent(type="todo", todo_items=_todo_items)
+
+                # After a tool completes, mark so post-final-tool text
+                # goes directly to token events (the final answer).
+                _any_tool_completed = True
+                if _classify_reasoning:
+                    _streaming_answer = False
+                    _reasoning_buf.clear()
+                    _reasoning_chars = 0
+
+                # Emit turn_end when all tools for this turn have completed
+                if not pending_tool_calls and _in_turn:
+                    if should_emit_event("turn_end", eff_visibility):
+                        yield StreamEvent(
+                            type="turn_end",
+                            turn_id=_turn_id,
+                            tools_called=_turn_tool_count,
+                        )
+                    _in_turn = False
+
                 continue
 
-            # Stream AI response content as token events
+            # Stream AI response content — classify as reasoning or token.
             content: str | None = None
             if isinstance(token, AIMessageChunk) and token.content:
                 # Content can be str or list (Anthropic returns list of content blocks)
@@ -1200,8 +1351,71 @@ class Agent(BaseLLM):
             elif isinstance(token, str) and token:
                 content = token
 
-            if content and should_emit_event("token", eff_visibility):
-                yield StreamEvent(type="token", content=content)
+            if content:
+                if (
+                    _any_tool_completed
+                    and not _streaming_answer
+                    and (_stream_reasoning_now or not _classify_reasoning)
+                ):
+                    # After the last tool completes, all text is the final
+                    # answer — emit as tokens, not reasoning.
+                    # Only force this when streaming reasoning immediately
+                    # (can't un-stream) or when reasoning classification is
+                    # off.  In buffered mode the buffer+flush at stream end
+                    # already handles post-final-tool text correctly.
+                    _streaming_answer = True
+                if _stream_reasoning_now and not _streaming_answer:
+                    # Stream reasoning tokens immediately — no buffering.
+                    # No char limit here: the caller (e.g. session.py)
+                    # handles reclassification at stream end for no-tool
+                    # responses.  A mid-stream limit caused duplication
+                    # (agent emits tokens AND caller re-sends reasoning).
+                    yield StreamEvent(type="reasoning", content=content)
+                elif _classify_reasoning and not _streaming_answer:
+                    # Buffer as potential reasoning (pre/inter-tool narration).
+                    _reasoning_buf.append(content)
+                    _reasoning_chars += len(content)
+                    if _reasoning_chars >= _reasoning_limit:
+                        # Exceeded limit without a tool call — re-classify
+                        # all buffered text as answer tokens.
+                        _streaming_answer = True
+                        for chunk in _reasoning_buf:
+                            if should_emit_event("token", eff_visibility):
+                                yield StreamEvent(type="token", content=chunk)
+                        _reasoning_buf.clear()
+                elif should_emit_event("token", eff_visibility):
+                    yield StreamEvent(type="token", content=content)
+
+        # Flush remaining reasoning buffer as answer tokens (final answer).
+        if _reasoning_buf:
+            for chunk in _reasoning_buf:
+                if should_emit_event("token", eff_visibility):
+                    yield StreamEvent(type="token", content=chunk)
+            _reasoning_buf.clear()
+
+        # Emit final usage event (for last LLM call, e.g. direct answer or post-tool response)
+        if _has_usage and should_emit_event("usage", eff_visibility):
+            _cost = None
+            if cfg.cost_per_input_token is not None and cfg.cost_per_output_token is not None:
+                _cost = (
+                    _usage_input_tokens * cfg.cost_per_input_token
+                    + _usage_output_tokens * cfg.cost_per_output_token
+                )
+            yield StreamEvent(
+                type="usage",
+                input_tokens=_usage_input_tokens,
+                output_tokens=_usage_output_tokens,
+                cost=_cost,
+                model=eff_model,
+            )
+
+        # Emit turn_end for final turn (direct answer or post-tool final answer)
+        if _in_turn and should_emit_event("turn_end", eff_visibility):
+            yield StreamEvent(
+                type="turn_end",
+                turn_id=_turn_id,
+                tools_called=_turn_tool_count,
+            )
 
         # Emit done event
         if should_emit_event("done", eff_visibility):

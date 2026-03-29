@@ -59,20 +59,56 @@ async def chat_ws(websocket: WebSocket):
 ## StreamEvent Reference
 
 `StreamEvent` fields (None when not applicable):
-- `type`: thinking | token | tool_start | tool_end | done | error
-- `content`: token text
+- `type`: thinking | reasoning | token | tool_start | tool_end | usage | turn_start | turn_end | intent | todo | done | error
+- `content`: token text, reasoning narration, or intent description
 - `tool` / `tool_id`: tool name and call ID
 - `arguments`: tool args (visibility detailed+)
 - `result`: **FULL tool result** (visibility detailed+) - for parsing/processing
 - `result_structured`: True if result is a structured dict (not text)
 - `preview`: truncated tool result (visibility=debug) - for UI display
 - `latency_ms`: tool latency
-- `model`: model name (thinking)
-- `tools_called`: total tools (done)
+- `model`: model name (thinking, usage)
+- `tools_called`: total tools (done, turn_end)
 - `error`: error message
+- `input_tokens` / `output_tokens`: token counts (usage events, visibility detailed+)
+- `cost`: estimated cost in USD (usage events, when pricing configured)
+- `turn_id`: turn counter, 1-indexed (turn_start/turn_end, visibility standard+)
+- `todo_items`: task checklist (todo events, visibility standard+)
 - `timestamp`: event timestamp
 
+See [Rich Agent Stream Events](agent-streaming.md) for usage, turn lifecycle, intent, and todo event details.
+
+### Reasoning Events
+
+When `include_reasoning=True` (the default), text the model emits before
+its first tool call or between consecutive tool calls is classified as
+**reasoning** rather than tokens. This gives consumers a "thinking out
+loud" stream to show in a collapsed panel — reasoning is not part of
+the final answer.
+
+```python
+async for event in agent.astream("Analyse the auth module"):
+    if event.type == "reasoning":
+        # Pre-tool or inter-tool narration
+        show_in_scratchpad(event.content)
+    elif event.type == "token":
+        # Final answer text
+        print(event.content, end="", flush=True)
+```
+
+If the model emits more than `reasoning_token_limit` characters (default
+300) without calling a tool, the buffer is reclassified as answer tokens
+so direct-answer responses stream normally.
+
 Serialize with `event.to_dict()`.
+
+### Agent vs CopilotAgent Reasoning
+
+The reasoning classification described above applies to `Agent.astream()`.
+`CopilotAgent.stream()` emits `CopilotEvent` objects (not `StreamEvent`)
+and gets reasoning events directly from the CLI runtime rather than from a
+buffer-based classifier. See the
+[Copilot Agent guide](features/copilot-agent.md) for `CopilotEvent` types.
 
 ### Structured Results
 
@@ -142,11 +178,30 @@ Two fields for different use cases:
 `StreamConfig` controls visibility and tool handling:
 - `visibility`: minimal | standard | detailed | debug (default: standard)
 - `include_thinking`: emit initial thinking event
+- `include_reasoning`: classify pre/inter-tool text as reasoning events (default: True)
 - `include_tool_events`: emit tool_start/tool_end
+- `reasoning_token_limit`: max chars buffered as reasoning before reclassifying as tokens (default: 300)
+- `stream_reasoning_immediately`: emit reasoning tokens as they arrive instead of buffering (default: False)
 - `tool_result_preview_length`: max preview length (debug)
 - `deduplicate_tool_starts`: avoid duplicate starts per tool call
+- `cost_per_input_token` / `cost_per_output_token`: pricing for cost calculation in usage events
+- `tool_intent_map`: custom tool-name-to-description mapping for intent events
+- `todo_tool_name`: tool name to detect for todo events (default: `"manage_todos"`)
 
 Pass via `agent.astream(..., stream_config=StreamConfig(visibility="detailed"))`.
+
+### Disabling Reasoning Classification
+
+If you do not need the reasoning/token split, disable it:
+
+```python
+from ai_infra.llm.streaming import StreamConfig
+
+config = StreamConfig(include_reasoning=False)
+async for event in agent.astream(prompt, stream_config=config):
+    # All text arrives as "token" events — no "reasoning" events emitted
+    ...
+```
 
 ## BYOK helper (temporary keys)
 

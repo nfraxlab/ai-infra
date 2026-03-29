@@ -51,15 +51,19 @@ async def test_astream_emits_tool_events_and_done():
 
     assert [event.type for event in events] == [
         "thinking",
+        "turn_start",
         "tool_start",
         "tool_end",
+        "turn_end",
+        "turn_start",
         "token",
+        "turn_end",
         "done",
     ]
-    tool_start = events[1]
+    tool_start = events[2]
     assert tool_start.tool == "search_docs"
     assert tool_start.arguments == {"query": "pricing"}
-    tool_end = events[2]
+    tool_end = events[3]
     assert tool_end.tool_id == "call-1"
     assert tool_end.preview == "result"
     assert events[-1].tools_called == 1

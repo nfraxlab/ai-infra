@@ -5,6 +5,177 @@
 
 ---
 
+## Phase 10: Rich Agent Stream Events
+
+> **Goal**: Enrich `StreamEvent` with CopilotAgent-level event types so the base `Agent` emits usage, turn lifecycle, intent, and todo events natively — without requiring a subprocess or CLI dependency
+> **Priority**: HIGH (Unblocks Pulse scratchpad, usage tracking, and turn indicators without CopilotAgent migration)
+> **Effort**: 3-5 hours
+
+**Design Decision**: CopilotAgent emits 17 event types via a CLI subprocess; the base Agent emits only 7. Rather than migrating consumers to CopilotAgent (which loses history injection, multimodal support, in-process tool access, and dynamic system prompts), we bring CopilotAgent's event richness into the base Agent using data already available from LangChain internals.
+
+### 10.1 Extend StreamEvent Model
+
+**Files**: `src/ai_infra/llm/streaming.py`
+
+- [x] **Add new type literals to StreamEvent**
+  - [x] `"usage"` — per-LLM-call token accounting
+  - [x] `"turn_start"` — agent begins a new reasoning/tool-calling iteration
+  - [x] `"turn_end"` — agent completes a reasoning/tool-calling iteration
+  - [x] `"intent"` — human-readable description of current agent action
+  - [x] `"todo"` — agent's task checklist update
+  ```python
+  from ai_infra import StreamEvent
+
+  # New event types alongside existing 7
+  StreamEvent(type="usage", input_tokens=1200, output_tokens=340, cost=0.004, model="claude-sonnet-4-5")
+  StreamEvent(type="turn_start", turn_id=1)
+  StreamEvent(type="turn_end", turn_id=1, tools_called=2)
+  StreamEvent(type="intent", content="Analyzing portfolio data")
+  StreamEvent(type="todo", todo_items=[{"id": 1, "title": "Fetch data", "status": "completed"}])
+  ```
+
+- [x] **Add new fields to StreamEvent dataclass**
+  - [x] `input_tokens: int | None = None`
+  - [x] `output_tokens: int | None = None`
+  - [x] `cost: float | None = None`
+  - [x] `turn_id: int | None = None`
+  - [x] `todo_items: list[dict[str, Any]] | None = None`
+
+- [x] **Update `should_emit_event` visibility rules**
+  - [x] `usage` — visible at `"detailed"` and `"debug"` only
+  - [x] `turn_start` / `turn_end` — visible at `"standard"` and above
+  - [x] `intent` — visible at `"standard"` and above
+  - [x] `todo` — visible at `"standard"` and above
+
+### 10.2 Emit Usage Events from Agent.astream
+
+**Files**: `src/ai_infra/llm/agent.py`
+
+- [ ] **Extract token usage from AIMessageChunk.usage_metadata during streaming**
+  - [x] `_extract_token_usage()` already exists (line ~661) for non-streaming; adapt for streaming path
+  - [x] Accumulate `usage_metadata` from `AIMessageChunk` objects in `astream()`
+  - [x] Emit `StreamEvent(type="usage", ...)` after each LLM response completes (before tool execution)
+  ```python
+  # After LLM response chunk stream ends, before tool execution:
+  if _accumulated_usage and should_emit_event("usage", eff_visibility):
+      yield StreamEvent(
+          type="usage",
+          input_tokens=_accumulated_usage.get("input_tokens", 0),
+          output_tokens=_accumulated_usage.get("output_tokens", 0),
+          model=eff_model,
+      )
+  ```
+
+- [x] **Support cost calculation**
+  - [x] Add optional `cost_per_input_token` / `cost_per_output_token` to `StreamConfig`
+  - [x] If provided, compute `cost` field on usage events
+  - [x] Default to `None` (no cost tracking) when pricing not configured
+
+### 10.3 Emit Turn Lifecycle Events
+
+**Files**: `src/ai_infra/llm/agent.py`
+
+- [x] **Emit turn_start at beginning of each Agent iteration**
+  - [x] Track iteration count as `_turn_id` (1-indexed)
+  - [x] Emit `StreamEvent(type="turn_start", turn_id=_turn_id)` before processing each LLM response
+  ```python
+  _turn_id = 0
+  # At start of each iteration in the tool-calling loop:
+  _turn_id += 1
+  if should_emit_event("turn_start", eff_visibility):
+      yield StreamEvent(type="turn_start", turn_id=_turn_id)
+  ```
+
+- [x] **Emit turn_end after each iteration completes**
+  - [x] Emit after tool execution finishes (or after final token if no tools)
+  - [x] Include `tools_called` count for that turn
+  ```python
+  if should_emit_event("turn_end", eff_visibility):
+      yield StreamEvent(type="turn_end", turn_id=_turn_id, tools_called=_turn_tool_count)
+  ```
+
+### 10.4 Emit Intent Events
+
+**Files**: `src/ai_infra/llm/agent.py`
+
+- [x] **Derive intent from tool_start events**
+  - [x] Maintain a `TOOL_INTENT_MAP` mapping tool names to human-readable descriptions
+  ```python
+  TOOL_INTENT_MAP: dict[str, str] = {
+      "search": "Searching codebase",
+      "grep_search": "Searching for text patterns",
+      "read_file": "Reading files",
+      "write_file": "Writing files",
+      "run_python": "Running Python code",
+      "run_shell": "Running shell command",
+      "create_visualization": "Creating visualization",
+  }
+  ```
+  - [x] Emit `StreamEvent(type="intent", content=...)` when a tool_start is detected and the tool name matches the map
+  - [x] Allow callers to extend the map via `StreamConfig.tool_intent_map`
+
+- [x] **Deduplicate consecutive intents**
+  - [x] Track last emitted intent string
+  - [x] Skip emission if the same intent would be repeated
+
+### 10.5 Emit Todo Events
+
+**Files**: `src/ai_infra/llm/agent.py`
+
+- [x] **Detect `manage_todos` tool result and emit as todo event**
+  - [x] When a tool_end event fires for `manage_todos`, parse the result
+  - [x] Emit `StreamEvent(type="todo", todo_items=parsed_items)` alongside the normal `tool_end`
+  ```python
+  if event.tool == "manage_todos" and event.result:
+      items = _parse_todo_result(event.result)
+      if items and should_emit_event("todo", eff_visibility):
+          yield StreamEvent(type="todo", todo_items=items)
+  ```
+
+- [x] **Keep todo emission generic**
+  - [x] Configurable tool name via `StreamConfig.todo_tool_name` (default: `"manage_todos"`)
+  - [x] Result parser handles both JSON list and structured dict formats
+
+### 10.6 Tests
+
+**Files**: `tests/unit/agent/test_agent_streaming.py`
+
+- [x] **Usage event tests**
+  - [x] Verify usage event emitted after LLM response with mock usage_metadata
+  - [x] Verify usage event not emitted at `"minimal"` / `"standard"` visibility
+  - [x] Verify usage event emitted at `"detailed"` visibility
+
+- [x] **Turn lifecycle tests**
+  - [x] Verify turn_start/turn_end emitted for single-turn (no tools) response
+  - [x] Verify turn_start/turn_end emitted per iteration in multi-tool response
+  - [x] Verify turn_id increments correctly
+
+- [x] **Intent event tests**
+  - [x] Verify intent emitted when tool_start matches TOOL_INTENT_MAP
+  - [x] Verify intent not emitted for unmapped tools
+  - [x] Verify consecutive duplicate intents are deduplicated
+
+- [x] **Todo event tests**
+  - [x] Verify todo event emitted alongside manage_todos tool_end
+  - [x] Verify todo_items contain parsed list
+  - [x] Verify todo event not emitted for other tools
+
+### 10.7 Documentation
+
+**Files**: `docs/agent-streaming.md`
+
+- [x] **Document new event types with examples**
+  - [x] Usage events — when they fire, what fields to expect
+  - [x] Turn lifecycle — how to use for UI state transitions
+  - [x] Intent — how to display agent actions in a scratchpad
+  - [x] Todo — how to render task checklists
+
+- [x] **Add migration guide from CopilotEvent to StreamEvent**
+  - [x] Mapping table: CopilotEvent type -> StreamEvent type
+  - [x] Note which CopilotEvent types remain exclusive to CopilotAgent (`subagent`, `compaction`, `context`, `task_complete`)
+
+---
+
 ## Phase 11: Evaluation Framework
 
 > **Goal**: Provide built-in tools for testing and evaluating LLM outputs

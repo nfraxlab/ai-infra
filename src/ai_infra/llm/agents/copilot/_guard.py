@@ -40,9 +40,46 @@ class Tool:
         _missing_copilot()
 
 
+class ModelInfo:
+    """Placeholder when github-copilot-sdk is not installed."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _missing_copilot()
+
+
+class ModelCapabilities:
+    """Placeholder when github-copilot-sdk is not installed."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _missing_copilot()
+
+
+class ModelSupports:
+    """Placeholder when github-copilot-sdk is not installed."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _missing_copilot()
+
+
+class ModelLimits:
+    """Placeholder when github-copilot-sdk is not installed."""
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        _missing_copilot()
+
+
 try:
     from copilot import (  # type: ignore[import-untyped,no-redef]
         CopilotClient as CopilotClient,
+    )
+    from copilot import (  # type: ignore[import-untyped,no-redef]
+        ModelCapabilities as ModelCapabilities,
+    )
+    from copilot import (  # type: ignore[import-untyped,no-redef]
+        ModelInfo as ModelInfo,
+    )
+    from copilot import (  # type: ignore[import-untyped,no-redef]
+        ModelSupports as ModelSupports,
     )
     from copilot import (  # type: ignore[import-untyped,no-redef]
         SubprocessConfig as SubprocessConfig,
@@ -50,6 +87,12 @@ try:
     from copilot import (  # type: ignore[import-untyped,no-redef]
         Tool as Tool,
     )
+
+    # ModelLimits may not be in the public API; fall back to the placeholder
+    try:
+        from copilot import ModelLimits as ModelLimits  # type: ignore[import-untyped,no-redef]
+    except ImportError:
+        pass
 
     HAS_COPILOT = True
 except ImportError:
@@ -59,6 +102,10 @@ except ImportError:
 __all__ = [
     "HAS_COPILOT",
     "CopilotClient",
+    "ModelCapabilities",
+    "ModelInfo",
+    "ModelLimits",
+    "ModelSupports",
     "SubprocessConfig",
     "Tool",
     "_missing_copilot",

@@ -104,7 +104,20 @@ class TestStreamDisconnect:
         # Verify collected events are valid
         for event in events:
             assert isinstance(event, StreamEvent)
-            assert event.type in ("thinking", "token", "tool_start", "tool_end", "done", "error")
+            assert event.type in (
+                "thinking",
+                "token",
+                "tool_start",
+                "tool_end",
+                "done",
+                "error",
+                "reasoning",
+                "usage",
+                "turn_start",
+                "turn_end",
+                "intent",
+                "todo",
+            )
 
     async def test_stream_generator_cleanup_on_break(self) -> None:
         """Test that generator resources are cleaned up on break."""
@@ -200,13 +213,14 @@ class TestStreamCancellation:
 
         async def consume_and_cancel() -> list[StreamEvent]:
             """Consume stream and cancel after first event."""
-            events = []
+            events: list[StreamEvent] = []
             task = asyncio.current_task()
             async for event in agent.astream("test", provider="openai"):
                 events.append(event)
                 if len(events) >= 2:
                     if task:
                         task.cancel()
+                    await asyncio.sleep(0)  # yield so CancelledError is raised
             return events
 
         with pytest.raises(asyncio.CancelledError):
