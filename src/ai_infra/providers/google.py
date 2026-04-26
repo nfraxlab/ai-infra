@@ -1,12 +1,12 @@
 """Google/Gemini provider configuration.
 
 Google supports:
-- Chat: Gemini 2.0, 1.5 Pro/Flash models
+- Chat: Gemini 3, 2.0, 1.5 Pro/Flash models
 - Embeddings: text-embedding-004
 - Multimodal Embeddings: multimodalembedding@001 (Vertex AI)
 - TTS: Google Cloud TTS (standard, neural2, studio)
 - STT: Google Cloud Speech-to-Text
-- ImageGen: Gemini multimodal + Imagen
+- ImageGen: Gemini native image models + Imagen
 - Realtime: Gemini Live API
 
 Note: TTS/STT may require GOOGLE_APPLICATION_CREDENTIALS for service account.
@@ -115,15 +115,20 @@ GOOGLE = ProviderConfig(
         ProviderCapability.IMAGEGEN: CapabilityConfig(
             models=[
                 # Gemini multimodal (uses generate_content API)
+                "gemini-3.1-flash-image-preview",
+                "gemini-3-pro-image-preview",
                 "gemini-2.5-flash-image",
                 "gemini-2.0-flash-exp-image-generation",
                 # Imagen models (uses generate_images API, may require billing)
+                "imagen-4.0-ultra-generate-001",
                 "imagen-3.0-generate-002",
+                "imagen-3.0-generate-001",
+                "imagen-3.0-fast-generate-001",
                 "imagen-4.0-generate-001",
                 "imagen-4.0-fast-generate-001",
             ],
-            default_model="gemini-2.5-flash-image",
-            features=["edit", "upscale"],
+            default_model="imagen-4.0-fast-generate-001",
+            features=["edit", "upscale", "reference_images", "search_grounding", "4k_output"],
         ),
         ProviderCapability.REALTIME: CapabilityConfig(
             models=[

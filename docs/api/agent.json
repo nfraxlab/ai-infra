@@ -791,8 +791,8 @@
     },
     {
       "name": "astream",
-      "signature": "(prompt: str, provider: str | None = None, model_name: str | None = None, tools: list[Any] | None = None, system: str | None = None, visibility: Literal['minimal', 'standard', 'detailed', 'debug'] = 'standard', stream_mode: str | list[str] = 'messages', config: dict[str, Any] | None = None, stream_config: StreamConfig | None = None, model_kwargs = {})",
-      "docstring": "Stream agent responses as normalized, typed events.\n\nThis is the recommended way to stream agent responses in applications.\nUnlike astream_agent_tokens() which yields raw LangChain message chunks,\nthis method yields clean StreamEvent objects ready for any framework.\n\nArgs:\n    prompt: User message/prompt\n    provider: LLM provider (uses default if None)\n    model_name: Model name (uses default if None)\n    tools: Override tools (uses global tools if None)\n    system: System prompt\n\n    visibility: Event detail level\n        - \"minimal\": Only response tokens\n        - \"standard\": + tool names and timing (default)\n        - \"detailed\": + tool arguments\n        - \"debug\": + tool result previews\n\n    stream_mode: LangGraph stream mode(s) - passed through to underlying graph\n        Supports: \"messages\", \"values\", \"updates\", \"custom\", \"debug\"\n\n    config: Full LangGraph RunnableConfig for advanced use cases\n        - config[\"configurable\"][\"thread_id\"] for persistence\n        - config[\"tags\"] for tracing\n        - Any other LangGraph config options\n\n    stream_config: Advanced streaming configuration (StreamConfig)\n    **model_kwargs: Passed through to LLM (temperature, max_tokens, etc.)\n\nYields:\n    StreamEvent objects with typed data\n\nExample - Basic usage:\n    ```python\n    agent = Agent(tools=[search_docs])\n\n    async for event in agent.astream(\"What is the refund policy?\"):\n        if event.type == \"token\":\n            print(event.content, end=\"\", flush=True)\n    ```\n\nExample - With visibility:\n    ```python\n    async for event in agent.astream(\n        \"Search for authentication docs\",\n        visibility=\"detailed\",  # Include tool arguments\n    ):\n        if event.type == \"tool_start\":\n            print(f\"Calling {event.tool} with {event.arguments}\")\n    ```\n\nExample - FastAPI SSE endpoint:\n    ```python\n    @app.post(\"/chat\")\n    async def chat(message: str):\n        async def generate():\n            async for event in agent.astream(message):\n                yield f\"data: {json.dumps(event.to_dict())}\\n\\n\"\n        return StreamingResponse(generate(), media_type=\"text/event-stream\")\n    ```",
+      "signature": "(prompt: str, provider: str | None = None, model_name: str | None = None, tools: list[Any] | None = None, system: str | None = None, history: list[dict[str, Any]] | None = None, visibility: Literal['minimal', 'standard', 'detailed', 'debug'] = 'standard', stream_mode: str | list[str] = 'messages', config: dict[str, Any] | None = None, stream_config: StreamConfig | None = None, tool_controls: ToolCallControls | dict[str, Any] | None = None, model_kwargs = {})",
+      "docstring": "Stream agent responses as normalized, typed events.\n\nThis is the recommended way to stream agent responses in applications.\nUnlike astream_agent_tokens() which yields raw LangChain message chunks,\nthis method yields clean StreamEvent objects ready for any framework.\n\nArgs:\n    prompt: User message/prompt\n    provider: LLM provider (uses default if None)\n    model_name: Model name (uses default if None)\n    tools: Override tools (uses global tools if None)\n    system: System prompt\n    history: Prior conversation turns as list of dicts with \"role\"\n        and \"content\" keys.  Prepended before the current user prompt.\n\n    visibility: Event detail level\n        - \"minimal\": Only response tokens\n        - \"standard\": + tool names and timing (default)\n        - \"detailed\": + tool arguments\n        - \"debug\": + tool result previews\n\n    stream_mode: LangGraph stream mode(s) - passed through to underlying graph\n        Supports: \"messages\", \"values\", \"updates\", \"custom\", \"debug\"\n\n    config: Full LangGraph RunnableConfig for advanced use cases\n        - config[\"configurable\"][\"thread_id\"] for persistence\n        - config[\"tags\"] for tracing\n        - Any other LangGraph config options\n\n    stream_config: Advanced streaming configuration (StreamConfig)\n    tool_controls: Tool calling controls (tool_choice, parallel_tool_calls, force_once)\n    **model_kwargs: Passed through to LLM (temperature, max_tokens, etc.)\n\nYields:\n    StreamEvent objects with typed data\n\nExample - Basic usage:\n    ```python\n    agent = Agent(tools=[search_docs])\n\n    async for event in agent.astream(\"What is the refund policy?\"):\n        if event.type == \"token\":\n            print(event.content, end=\"\", flush=True)\n    ```\n\nExample - With visibility:\n    ```python\n    async for event in agent.astream(\n        \"Search for authentication docs\",\n        visibility=\"detailed\",  # Include tool arguments\n    ):\n        if event.type == \"tool_start\":\n            print(f\"Calling {event.tool} with {event.arguments}\")\n    ```\n\nExample - FastAPI SSE endpoint:\n    ```python\n    @app.post(\"/chat\")\n    async def chat(message: str):\n        async def generate():\n            async for event in agent.astream(message):\n                yield f\"data: {json.dumps(event.to_dict())}\\n\\n\"\n        return StreamingResponse(generate(), media_type=\"text/event-stream\")\n    ```",
       "parameters": [
         {
           "name": "self",
@@ -837,6 +837,13 @@
           "required": false
         },
         {
+          "name": "history",
+          "type": "list[dict[str, Any]] | None",
+          "default": "None",
+          "description": "Prior conversation turns as list of dicts with \"role\" and \"content\" keys.  Prepended before the current user prompt.",
+          "required": false
+        },
+        {
           "name": "visibility",
           "type": "Literal['minimal', 'standard', 'detailed', 'debug']",
           "default": "'standard'",
@@ -862,6 +869,13 @@
           "type": "StreamConfig | None",
           "default": "None",
           "description": "Advanced streaming configuration (StreamConfig)",
+          "required": false
+        },
+        {
+          "name": "tool_controls",
+          "type": "ToolCallControls | dict[str, Any] | None",
+          "default": "None",
+          "description": "Tool calling controls (tool_choice, parallel_tool_calls, force_once)",
           "required": false
         },
         {

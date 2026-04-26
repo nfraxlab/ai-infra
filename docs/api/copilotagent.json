@@ -1,0 +1,523 @@
+{
+  "name": "CopilotAgent",
+  "module": "ai_infra.llm",
+  "docstring": "Computer automation agent backed by the GitHub Copilot CLI runtime.\n\nDelegates autonomous task execution to the Copilot CLI, which manages\nits own LLM calls, planning loop, and tool use. This is not an LLM\nprovider \u2014 it is a runtime you direct with plain-language tasks.\n\nThe agent lazily starts the CLI process on first use and reuses it\nacross multiple ``run()`` / ``stream()`` calls. Use the async context\nmanager for explicit lifecycle control.\n\nExample \u2014 one-liner task::\n\n    from ai_infra import CopilotAgent\n\n    result = await CopilotAgent(cwd=\"/my/project\").run(\n        \"Add docstrings to every public function\"\n    )\n    print(result.content)\n\nExample \u2014 multi-turn session (conversation memory)::\n\n    agent = CopilotAgent()\n    r1 = await agent.run(\"Explore the auth module\", session_id=\"s1\")\n    r2 = await agent.run(\"Now add tests for it\", session_id=\"s1\")\n\nExample \u2014 streaming with live tool output::\n\n    async for event in agent.stream(\"Run the test suite and fix failures\"):\n        if event.type == \"token\":\n            print(event.content, end=\"\", flush=True)\n        elif event.type == \"tool_start\":\n            print(f\"\\n\u2192 {event.tool}\")\n        elif event.type == \"tool_output\":\n            print(event.content, end=\"\", flush=True)\n\nExample \u2014 custom tool::\n\n    @copilot_tool\n    async def lookup_issue(id: str) -> str:\n        \"Fetch an issue from Linear.\"\n        return await linear.get(id)\n\n    agent = CopilotAgent(tools=[lookup_issue])\n    await agent.run(\"Fix the bug described in issue LIN-42\")\n\nExample \u2014 read-only analysis (no writes, no shell)::\n\n    agent = CopilotAgent(permissions=PermissionMode.READ_ONLY)\n    result = await agent.run(\"Audit for OWASP Top 10 vulnerabilities\")\n\nExample \u2014 BYOK (no GitHub Copilot subscription required)::\n\n    agent = CopilotAgent(\n        model=\"gpt-4.1\",\n        provider={\n            \"type\": \"openai\",\n            \"base_url\": \"https://api.openai.com/v1\",\n            \"api_key\": os.environ[\"OPENAI_API_KEY\"],\n        },\n    )\n\nExample \u2014 with ai-infra callbacks (LoggingCallbacks, MetricsCallbacks, etc.)::\n\n    from ai_infra.callbacks import LoggingCallbacks\n    agent = CopilotAgent(callbacks=LoggingCallbacks())\n\nExample \u2014 context manager for explicit cleanup::\n\n    async with CopilotAgent(cwd=\"/my/project\") as agent:\n        result = await agent.run(\"Refactor the database layer\")\n\nArgs:\n    model: Model to use (e.g. ``\"claude-sonnet-4-5\"``, ``\"gpt-4.1\"``).\n        When using BYOK ``provider``, this is required. Otherwise the\n        Copilot CLI selects the default model.\n    cwd: Working directory for the CLI process. Defaults to the current\n        directory. Set this to the project root when automating file tasks.\n    github_token: GitHub token for authentication. Takes priority over\n        the ``COPILOT_GITHUB_TOKEN`` / ``GH_TOKEN`` environment variables\n        and the CLI's stored login credentials.\n    provider: BYOK provider configuration dict for non-GitHub LLM access.\n        Supports ``\"openai\"``, ``\"azure\"``, and ``\"anthropic\"`` types.\n        When set, ``model`` is required.\n        Example: ``{\"type\": \"openai\", \"base_url\": \"...\", \"api_key\": \"...\"}``\n    tools: Python callables decorated with ``@copilot_tool``, or raw\n        Copilot SDK ``Tool`` objects, to expose to the agent.\n    permissions: Controls which tools the agent may invoke.\n        Pass a ``PermissionMode`` enum value for built-in policies, or\n        a callable ``(tool_name: str, arguments: dict) -> bool`` for\n        custom logic. Default: ``PermissionMode.AUTO_APPROVE``.\n    skill_dirs: Directories containing skill subdirectories (each with a\n        ``SKILL.md`` file). Skills are prompt modules injected as context.\n    mcp_servers: MCP server configurations keyed by server name.\n        Example: ``{\"filesystem\": {\"type\": \"local\", \"command\": \"npx\",\n        \"args\": [\"-y\", \"@mcp/server-filesystem\", \"/tmp\"], \"tools\": [\"*\"]}}``\n    custom_agents: Named sub-agent definitions for automatic task delegation.\n        Each entry: ``{\"name\": str, \"prompt\": str, \"tools\": list[str]}``.\n    system_message: Override the default system prompt for the session.\n    streaming: Enable streaming delta events from the CLI (required for\n        ``stream()``). Default: ``True``.\n    infinite_context: Enable automatic context compaction when the\n        context window approaches capacity. Default: ``True``.\n    callbacks: ai-infra ``Callbacks`` instance (e.g. ``LoggingCallbacks()``,\n        ``MetricsCallbacks()``). Copilot events are bridged to the standard\n        ``ToolStartEvent``, ``ToolEndEvent``, ``LLMTokenEvent`` callbacks.\n    reasoning_effort: Chain-of-thought depth for models that support it.\n        One of ``\"low\"``, ``\"medium\"``, ``\"high\"``, ``\"xhigh\"``.\n        Call ``list_models()`` to check which models accept this option.\n    on_list_models: Custom handler for ``CopilotClient.list_models()``. When\n        provided, the CLI's built-in model list RPC is replaced entirely.\n        Return a list of ``ModelInfo`` objects describing your provider's\n        models. Essential for BYOK to declare reasoning support::\n\n            from ai_infra.llm.agents.copilot import ModelInfo\n            agent = CopilotAgent(\n                provider={\"type\": \"anthropic\", ...},\n                on_list_models=lambda: [ModelInfo(\n                    id=\"claude-sonnet-4-5\",\n                    name=\"Claude Sonnet 4.5\",\n                    capabilities=ModelCapabilities(\n                        supports=ModelSupports(vision=True, reasoning_effort=True),\n                        limits=ModelLimits(max_context_window_tokens=200_000),\n                    ),\n                )],\n            )\n    on_user_input: Async callable invoked when the agent needs to ask the\n        user a question (enables Copilot's ``ask_user`` tool). Receives\n        ``(request, invocation)`` where ``request[\"question\"]`` is the\n        question text and ``request.get(\"choices\")`` is an optional list.\n        Must return ``{\"answer\": str, \"wasFreeform\": bool}``.\n    hooks: Power-user hook dict for session lifecycle interception. Keys\n        are hook names (``\"on_session_start\"``, ``\"on_user_prompt_submitted\"``,\n        ``\"on_post_tool_use\"``, ``\"on_session_end\"``, ``\"on_error_occurred\"``).\n        Any ``\"on_pre_tool_use\"`` key here is merged with\u2014and takes\n        precedence over\u2014the built-in permission hook derived from\n        ``permissions``.\n    telemetry: OpenTelemetry config for the CLI subprocess.\n        Example: ``{\"otlp_endpoint\": \"http://localhost:4318\"}``.\n        Providing this dict enables tracing \u2014 no separate flag required.\n    external_server: URL of an already-running Copilot CLI server\n        (e.g. ``\"localhost:3000\"``). When set, a new subprocess is not\n        spawned and the ``cli_path`` / ``env`` / ``github_token`` params\n        are ignored.\n    cli_path: Absolute path to a specific ``copilot`` CLI binary.\n        Defaults to the bundled binary from the SDK.\n    env: Extra environment variables for the CLI subprocess.\n        Merged with the inherited process environment.\n    disabled_skills: Skill names to exclude when ``skill_dirs`` are\n        provided (e.g. ``[\"slow-research\", \"web-fetch\"]``).\n    initial_agent: Name of the custom agent to pre-select when the\n        session starts. Must match a ``name`` in ``custom_agents``.\n        Equivalent to calling ``agent.select()`` after creation but\n        avoids the extra round-trip.",
+  "parameters": [
+    {
+      "name": "model",
+      "type": "str | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "cwd",
+      "type": "str | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "github_token",
+      "type": "str | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "provider",
+      "type": "dict[str, Any] | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "tools",
+      "type": "list[Any] | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "permissions",
+      "type": "PermissionMode | PermissionHandler",
+      "default": "PermissionMode.AUTO_APPROVE",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "skill_dirs",
+      "type": "list[str] | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "mcp_servers",
+      "type": "dict[str, Any] | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "custom_agents",
+      "type": "list[dict[str, Any]] | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "system_message",
+      "type": "str | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "streaming",
+      "type": "bool",
+      "default": "True",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "infinite_context",
+      "type": "bool",
+      "default": "True",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "callbacks",
+      "type": "Callbacks | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "reasoning_effort",
+      "type": "str | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "on_list_models",
+      "type": "Callable | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "on_user_input",
+      "type": "Callable | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "hooks",
+      "type": "dict[str, Callable] | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "telemetry",
+      "type": "dict[str, Any] | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "external_server",
+      "type": "str | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "cli_path",
+      "type": "str | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "env",
+      "type": "dict[str, str] | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "disabled_skills",
+      "type": "list[str] | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "initial_agent",
+      "type": "str | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    }
+  ],
+  "methods": [
+    {
+      "name": "__init__",
+      "signature": "(model: str | None = None, cwd: str | None = None, github_token: str | None = None, provider: dict[str, Any] | None = None, tools: list[Any] | None = None, permissions: PermissionMode | PermissionHandler = PermissionMode.AUTO_APPROVE, skill_dirs: list[str] | None = None, mcp_servers: dict[str, Any] | None = None, custom_agents: list[dict[str, Any]] | None = None, system_message: str | None = None, streaming: bool = True, infinite_context: bool = True, callbacks: Callbacks | None = None, reasoning_effort: str | None = None, on_list_models: Callable | None = None, on_user_input: Callable | None = None, hooks: dict[str, Callable] | None = None, telemetry: dict[str, Any] | None = None, external_server: str | None = None, cli_path: str | None = None, env: dict[str, str] | None = None, disabled_skills: list[str] | None = None, initial_agent: str | None = None) -> None",
+      "docstring": null,
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "model",
+          "type": "str | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "cwd",
+          "type": "str | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "github_token",
+          "type": "str | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "provider",
+          "type": "dict[str, Any] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "tools",
+          "type": "list[Any] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "permissions",
+          "type": "PermissionMode | PermissionHandler",
+          "default": "PermissionMode.AUTO_APPROVE",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "skill_dirs",
+          "type": "list[str] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "mcp_servers",
+          "type": "dict[str, Any] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "custom_agents",
+          "type": "list[dict[str, Any]] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "system_message",
+          "type": "str | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "streaming",
+          "type": "bool",
+          "default": "True",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "infinite_context",
+          "type": "bool",
+          "default": "True",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "callbacks",
+          "type": "Callbacks | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "reasoning_effort",
+          "type": "str | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "on_list_models",
+          "type": "Callable | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "on_user_input",
+          "type": "Callable | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "hooks",
+          "type": "dict[str, Callable] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "telemetry",
+          "type": "dict[str, Any] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "external_server",
+          "type": "str | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "cli_path",
+          "type": "str | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "env",
+          "type": "dict[str, str] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "disabled_skills",
+          "type": "list[str] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "initial_agent",
+          "type": "str | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        }
+      ],
+      "returns": "None",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "delete_session",
+      "signature": "(session_id: str) -> None",
+      "docstring": "Permanently delete a persisted session and all its on-disk data.\n\nThis is irreversible \u2014 the session cannot be resumed after deletion.\nTo release in-memory resources while preserving state for later\nresumption, disconnect the session instead (handled automatically\nby ``run()`` / ``stream()``).\n\nArgs:\n    session_id: The session ID to delete.\n\nExample::\n\n    await agent.delete_session(\"user-alice-pr-review-42\")",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "session_id",
+          "type": "str",
+          "default": null,
+          "description": "The session ID to delete. Example:: await agent.delete_session(\"user-alice-pr-review-42\")",
+          "required": true
+        }
+      ],
+      "returns": "None",
+      "is_async": true,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_models",
+      "signature": "() -> list[str]",
+      "docstring": "Return all models available to this agent.\n\nUseful for inspecting what models the Copilot CLI supports for the\ncurrent authentication context.\n\nReturns:\n    List of model identifier strings (e.g. ``[\"gpt-4.1\", \"claude-sonnet-4-5\"]``).",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        }
+      ],
+      "returns": "list[str]",
+      "is_async": true,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_sessions",
+      "signature": "() -> list[dict[str, Any]]",
+      "docstring": "Return metadata for all persisted sessions on this machine.\n\nEach entry is a dict with at minimum ``sessionId`` and ``createdAt``\nfields. Useful for session management UIs and cleanup routines.\n\nReturns:\n    List of session metadata dicts.\n\nExample::\n\n    sessions = await agent.list_sessions()\n    for s in sessions:\n        print(s[\"sessionId\"], s.get(\"createdAt\"))",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        }
+      ],
+      "returns": "list[dict[str, Any]]",
+      "is_async": true,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "run",
+      "signature": "(prompt: str, session_id: str | None = None, attachments: list[dict[str, Any]] | None = None) -> CopilotResult",
+      "docstring": "Run a task and return the final result.\n\nThe Copilot CLI autonomously determines which tools to invoke, in\nwhat order, and when the task is complete. This call blocks until\nthe agent becomes idle (all tool calls finished, final response\ndelivered).\n\nArgs:\n    prompt: Plain-language task description.\n    session_id: Optional session ID to resume a prior conversation.\n        If omitted, a fresh session is started.\n\nReturns:\n    ``CopilotResult`` with the assistant's final response and metadata.\n\nExample::\n\n    agent = CopilotAgent(cwd=\"/my/project\")\n    result = await agent.run(\"Fix all mypy errors\")\n    print(result.content)",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "str",
+          "default": null,
+          "description": "Plain-language task description.",
+          "required": true
+        },
+        {
+          "name": "session_id",
+          "type": "str | None",
+          "default": "None",
+          "description": "Optional session ID to resume a prior conversation. If omitted, a fresh session is started.",
+          "required": false
+        },
+        {
+          "name": "attachments",
+          "type": "list[dict[str, Any]] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        }
+      ],
+      "returns": "CopilotResult",
+      "is_async": true,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "stop",
+      "signature": "() -> None",
+      "docstring": "Stop the underlying Copilot CLI process.\n\nCalled automatically when using the async context manager. Call\nmanually when you are done with a long-lived agent instance.",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        }
+      ],
+      "returns": "None",
+      "is_async": true,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "stream",
+      "signature": "(prompt: str, session_id: str | None = None, attachments: list[dict[str, Any]] | None = None) -> AsyncIterator[CopilotEvent]",
+      "docstring": "Run a task and yield typed events as they arrive.\n\nYields ``CopilotEvent`` instances in real time: text tokens as they\nstream, tool execution start/output/end, agent intent updates, and\na final ``done`` event when the turn completes.\n\nArgs:\n    prompt: Plain-language task description.\n    session_id: Optional session ID to resume a prior conversation.\n\nYields:\n    ``CopilotEvent`` instances in chronological order.\n\nExample::\n\n    async for event in agent.stream(\"Refactor the auth module\"):\n        if event.type == \"token\":\n            print(event.content, end=\"\", flush=True)\n        elif event.type == \"tool_start\":\n            print(f\"\\n\u2192 {event.tool}({event.arguments})\")\n        elif event.type == \"tool_output\":\n            print(event.content, end=\"\", flush=True)\n        elif event.type == \"tool_end\":\n            print(f\"  [{event.latency_ms:.0f}ms]\")",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "prompt",
+          "type": "str",
+          "default": null,
+          "description": "Plain-language task description.",
+          "required": true
+        },
+        {
+          "name": "session_id",
+          "type": "str | None",
+          "default": "None",
+          "description": "Optional session ID to resume a prior conversation.",
+          "required": false
+        },
+        {
+          "name": "attachments",
+          "type": "list[dict[str, Any]] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        }
+      ],
+      "returns": "AsyncIterator[CopilotEvent]",
+      "is_async": true,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    }
+  ],
+  "bases": [],
+  "source_file": "src/ai_infra/llm/agents/copilot/_agent.py",
+  "source_line": 34
+}

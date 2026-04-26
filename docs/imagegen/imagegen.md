@@ -1,372 +1,276 @@
 # Image Generation
 
-> Generate images with DALL-E, Imagen, Stability AI, and Replicate.
+> Generate images with OpenAI, Google, xAI, Stability AI, and Replicate.
 
 ## Quick Start
 
 ```python
 from ai_infra import ImageGen
 
-gen = ImageGen()  # Auto-detects provider from env
-image = gen.generate("A serene mountain landscape at sunset")
-image.save("landscape.png")
+gen = ImageGen()  # Auto-detects the first configured image provider
+images = gen.generate("A serene mountain landscape at sunset")
+
+images[0].save("landscape.png")
 ```
 
----
+`generate()` and `agenerate()` always return `list[GeneratedImage]`, even when `n=1`.
 
 ## Overview
 
-ai-infra provides a unified interface for image generation across multiple providers:
-- **OpenAI DALL-E** - DALL-E 2, DALL-E 3
-- **Google Imagen** - Imagen 2, Imagen 3
-- **Stability AI** - Stable Diffusion, SDXL
-- **Replicate** - Various open-source models
+ai-infra wraps provider-specific image APIs behind a single `ImageGen` interface:
 
----
+- **OpenAI**: GPT Image 1.5/1/mini plus legacy DALL-E 2/3
+- **Google**: Imagen 3/4 and Gemini native image models
+- **xAI**: Grok Imagine (`grok-imagine-image`)
+- **Stability AI**: SDXL and other text-to-image engines
+- **Replicate**: Curated popular image models such as Flux and SDXL
+
+Auto-detection priority is:
+
+1. `OPENAI_API_KEY`
+2. `GOOGLE_API_KEY` / `GEMINI_API_KEY`
+3. `XAI_API_KEY`
+4. `STABILITY_API_KEY`
+5. `REPLICATE_API_TOKEN`
 
 ## Basic Usage
 
-### Simple Generation
+### Explicit Provider Selection
 
 ```python
 from ai_infra import ImageGen
 
-gen = ImageGen()
-image = gen.generate("A futuristic city with flying cars")
-image.save("city.png")
+openai_gen = ImageGen(provider="openai")
+google_gen = ImageGen(provider="google")
+xai_gen = ImageGen(provider="xai")
+stability_gen = ImageGen(provider="stability")
+replicate_gen = ImageGen(provider="replicate")
 ```
 
-### With Provider Selection
+`provider="google_genai"` is also accepted for backwards compatibility, but `google` is the preferred user-facing name.
+
+### Async Generation
 
 ```python
 from ai_infra import ImageGen
 
-# OpenAI DALL-E
 gen = ImageGen(provider="openai")
-image = gen.generate("A cute robot assistant")
+images = await gen.agenerate("A sunset over mountains")
 
-# Stability AI
-gen = ImageGen(provider="stability")
-image = gen.generate("A photorealistic portrait")
-
-# Google Imagen
-gen = ImageGen(provider="google_genai")
-image = gen.generate("An abstract painting")
+images[0].save("sunset.png")
 ```
 
-### With Parameters
+### Multiple Images
 
 ```python
-gen = ImageGen(provider="openai")
-image = gen.generate(
-    "A cute robot assistant",
-    model="dall-e-3",
-    size="1792x1024",  # Widescreen
-    quality="hd",
-    style="vivid",
+gen = ImageGen(provider="openai", model="gpt-image-1.5")
+images = gen.generate("A magical forest", n=3)
+
+for index, image in enumerate(images):
+    image.save(f"forest_{index}.png")
+```
+
+Provider limits vary. OpenAI legacy DALL-E 3 remains more restrictive than GPT Image, Google Imagen, or xAI batch generation.
+
+## Provider Notes
+
+### OpenAI
+
+```python
+gen = ImageGen(provider="openai", model="gpt-image-1.5")
+images = gen.generate(
+    "A polished ecommerce photo of a ceramic mug",
+    size="1536x1024",
+    quality="high",
+    background="transparent",
+    output_format="webp",
 )
 ```
 
----
+- Default model: `gpt-image-1.5`
+- GPT Image models return binary image data directly
+- Legacy `dall-e-2` and `dall-e-3` are still supported
+- Provider-native kwargs such as `background`, `output_format`, `output_compression`, `moderation`, and `input_fidelity` pass through to the SDK
 
-## Async Generation
+### Google
 
-```python
-from ai_infra import ImageGen
-
-gen = ImageGen(provider="openai")
-image = await gen.agenerate("A sunset over mountains")
-image.save("sunset.png")
-```
-
----
-
-## Provider Configuration
-
-### OpenAI DALL-E
+Use Imagen when you want the dedicated image-generation API, and Gemini image models when you want native editing, reference images, or Gemini-specific image workflows.
 
 ```python
-gen = ImageGen(provider="openai")
-image = gen.generate(
-    "Your prompt...",
-    model="dall-e-3",  # or "dall-e-2"
-    size="1024x1024",  # 1024x1024, 1792x1024, 1024x1792
-    quality="standard",  # or "hd"
-    style="vivid",  # or "natural"
+gen = ImageGen(provider="google", model="imagen-4.0-fast-generate-001")
+images = gen.generate(
+    "A clean editorial product shot of a notebook",
+    aspect_ratio="16:9",
+    image_size="2K",
 )
 ```
+
+```python
+gen = ImageGen(provider="google", model="gemini-3.1-flash-image-preview")
+images = gen.generate(
+    "Create a crisp infographic explaining photosynthesis",
+    aspect_ratio="16:9",
+    image_size="2K",
+)
+```
+
+- Default model: `imagen-4.0-fast-generate-001`
+- Gemini image models are used through `generate_content`
+- Imagen models are used through `generate_images`
+- For Gemini models, ai-infra skips interim thought images and returns only final image outputs
+- For Google image generation, `aspect_ratio` and `image_size` are a better fit than raw `size`, though `size` is still used to derive sensible defaults when possible
+
+### xAI
+
+```python
+gen = ImageGen(provider="xai")
+images = gen.generate(
+    "A collage of London landmarks in a stenciled street-art style",
+    aspect_ratio="3:2",
+    resolution="2k",
+)
+
+images[0].save("london.png")
+```
+
+- Default model: `grok-imagine-image`
+- ai-infra requests base64 output by default so `save()` works without an additional fetch step
+- Supported provider-native kwargs include `aspect_ratio`, `resolution`, and `image_format`
+- If you prefer temporary URLs instead of binary data, pass `image_format="url"`
 
 ### Stability AI
 
 ```python
 gen = ImageGen(provider="stability")
-image = gen.generate(
-    "Your prompt...",
-    model="stable-diffusion-xl",
+images = gen.generate(
+    "A photorealistic portrait",
     size="1024x1024",
     steps=30,
     cfg_scale=7.0,
-    seed=12345,  # For reproducibility
-)
-```
-
-### Google Imagen
-
-```python
-gen = ImageGen(provider="google_genai")
-image = gen.generate(
-    "Your prompt...",
-    model="imagen-3",
-    size="1024x1024",
-    aspect_ratio="1:1",  # or "16:9", "9:16", etc.
+    seed=12345,
 )
 ```
 
 ### Replicate
 
 ```python
-gen = ImageGen(provider="replicate")
-image = gen.generate(
-    "Your prompt...",
-    model="stability-ai/sdxl",
-    size="1024x1024",
-    num_inference_steps=50,
-    guidance_scale=7.5,
-)
-```
-
----
-
-## Multiple Images
-
-Generate multiple variations:
-
-```python
-gen = ImageGen(provider="openai")
+gen = ImageGen(provider="replicate", model="black-forest-labs/flux-schnell")
 images = gen.generate(
-    "A magical forest",
-    n=4,  # Generate 4 images
+    "A futuristic city skyline at night",
+    size="1024x1024",
+    num_outputs=2,
 )
-
-for i, image in enumerate(images):
-    image.save(f"forest_{i}.png")
 ```
 
----
+Replicate commonly returns URLs rather than image bytes. Use `await images[0].fetch()` if you need local bytes before saving.
 
-## Image Editing
+## Editing Images
 
-### Inpainting (OpenAI)
+### OpenAI Inpainting
 
 ```python
-gen = ImageGen(provider="openai")
-image = gen.edit(
+gen = ImageGen(provider="openai", model="gpt-image-1.5")
+images = gen.edit(
     image="input.png",
-    mask="mask.png",  # White areas = edit region
+    mask="mask.png",
     prompt="Add a rainbow in the sky",
+    size="1024x1024",
 )
 ```
 
-### Image Variations
+### Google Gemini Editing
 
 ```python
-gen = ImageGen(provider="openai")
-images = gen.create_variation(
+gen = ImageGen(provider="google", model="gemini-3.1-flash-image-preview")
+images = gen.edit(
     image="input.png",
-    n=3,  # Generate 3 variations
+    prompt="Turn this into a magazine cover with bold serif typography",
+    aspect_ratio="16:9",
 )
 ```
 
----
+Google editing requires a Gemini image model. The default Imagen model does not support the `edit()` path.
 
-## Advanced Options
-
-### Negative Prompts
+### xAI Editing
 
 ```python
-gen = ImageGen(provider="stability")
-image = gen.generate(
-    "A beautiful portrait",
-    negative_prompt="blurry, low quality, distorted",
+gen = ImageGen(provider="xai")
+images = gen.edit(
+    image="input.png",
+    prompt="Render this as a pencil sketch with detailed shading",
+    aspect_ratio="3:2",
 )
 ```
 
-### Seed for Reproducibility
+### Variations
 
 ```python
-gen = ImageGen(provider="stability")
-image = gen.generate(
-    "A red apple",
-    seed=42,  # Same seed = same image
-)
+gen = ImageGen(provider="openai", model="dall-e-2")
+variations = gen.variations(image="input.png", n=3)
 ```
 
-### Style Transfer
+Image variations are still OpenAI DALL-E 2 only.
+
+## Working With Results
+
+Each item returned by `generate()`, `agenerate()`, `edit()`, or `variations()` is a `GeneratedImage`.
 
 ```python
-gen = ImageGen(provider="stability")
-image = gen.generate(
-    "A landscape",
-    style="anime",  # Provider-specific styles
-)
+images = ImageGen(provider="openai").generate("A cute robot")
+image = images[0]
+
+print(image.provider)
+print(image.model)
+print(image.revised_prompt)
+
+if image.data is not None:
+    image.save("robot.png")
+elif image.url is not None:
+    await image.fetch()
+    image.save("robot.png")
 ```
 
----
+`GeneratedImage` fields:
 
-## Working with Results
+- `data`: Image bytes, when the provider returned binary output
+- `url`: Provider-hosted URL, when the provider returned a URL
+- `revised_prompt`: Revised prompt text, when the provider exposes it
+- `metadata`: Provider-specific metadata such as moderation or seed data
 
-### ImageResult Object
-
-```python
-result = await generate_image(prompt="...")
-
-# Image data
-image_bytes = result.data
-image_base64 = result.base64
-
-# Metadata
-print(f"Provider: {result.provider}")
-print(f"Model: {result.model}")
-print(f"Size: {result.size}")
-print(f"Seed: {result.seed}")  # If available
-
-# Save to file
-result.save("output.png")
-result.save("output.jpg", format="jpeg", quality=90)
-
-# Convert to PIL Image (if pillow installed)
-pil_image = result.to_pil()
-pil_image.show()
-```
-
----
-
-## Streaming Generation
-
-For providers that support progressive generation:
+## Discovery
 
 ```python
-async for progress in generate_image_stream(
-    prompt="...",
-    provider="replicate",
-):
-    print(f"Progress: {progress.percentage}%")
-
-    if progress.preview:
-        progress.preview.save("preview.png")
-
-    if progress.is_complete:
-        progress.result.save("final.png")
-```
-
----
-
-## Provider Discovery
-
-### List Available Providers
-
-```python
-from ai_infra import list_imagegen_providers
-
-providers = list_imagegen_providers()
-for provider in providers:
-    print(f"{provider.name}: {provider.models}")
-```
-
-### Check Provider Configuration
-
-```python
-from ai_infra import is_provider_configured
-
-if is_provider_configured("openai", "IMAGEGEN"):
-    result = await generate_image(prompt="...", provider="openai")
-else:
-    print("OpenAI not configured for image generation")
-```
-
----
-
-## Error Handling
-
-```python
-from ai_infra import (
-    generate_image,
-    ImageGenError,
-    ContentFilterError,
-    RateLimitError,
+from ai_infra.imagegen import (
+    ImageGen,
+    list_all_models,
+    list_configured_providers,
+    list_known_models,
+    list_models,
+    list_providers,
 )
 
-try:
-    result = await generate_image(prompt="...")
-except ContentFilterError:
-    print("Prompt was rejected by content filter")
-except RateLimitError:
-    print("Rate limit exceeded, try again later")
-except ImageGenError as e:
-    print(f"Generation failed: {e}")
+print(list_providers())
+print(list_configured_providers())
+print(list_known_models("xai"))
+print(list_models("xai"))
+print(list_all_models())
+
+# Class-level convenience helpers
+print(ImageGen.list_models("google", refresh=True))
+print(ImageGen.list_known_models("google"))
+print(ImageGen.list_all_models())
 ```
-
----
-
-## Cost Tracking
-
-```python
-result = await generate_image(prompt="...")
-
-if result.cost:
-    print(f"Cost: ${result.cost:.4f}")
-    print(f"Model: {result.model}")
-```
-
----
-
-## Example: Product Images
-
-```python
-async def generate_product_images(
-    product_name: str,
-    styles: list[str],
-) -> list:
-    results = []
-
-    for style in styles:
-        result = await generate_image(
-            prompt=f"Professional product photo of {product_name}, {style} style, white background, studio lighting",
-            provider="openai",
-            model_name="dall-e-3",
-            size="1024x1024",
-            quality="hd",
-        )
-        results.append(result)
-
-    return results
-
-# Generate in multiple styles
-images = await generate_product_images(
-    "wireless headphones",
-    styles=["minimalist", "lifestyle", "technical"],
-)
-```
-
----
 
 ## Environment Variables
 
 ```bash
-# OpenAI
 OPENAI_API_KEY=sk-...
-
-# Stability AI
-STABILITY_API_KEY=sk-...
-
-# Google
 GOOGLE_API_KEY=...
-
-# Replicate
+GEMINI_API_KEY=...
+XAI_API_KEY=...
+STABILITY_API_KEY=sk-...
 REPLICATE_API_TOKEN=r8_...
 ```
-
----
 
 ## See Also
 

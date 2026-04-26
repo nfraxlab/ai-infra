@@ -1059,6 +1059,26 @@ class TestListModels:
         finally:
             _FETCHERS["openai"] = original_fetcher
 
+    def test_list_models_forwards_timeout_to_xai_fetcher(
+        self,
+        mock_env_clean: None,
+        mock_xai_key: str,
+        temp_cache_dir: Path,
+    ) -> None:
+        """Forwards timeout to the xAI fetcher."""
+        from ai_infra.llm.providers.discovery import _FETCHERS, list_models
+
+        mock_fetcher = MagicMock(return_value=["grok-beta"])
+        original_fetcher = _FETCHERS["xai"]
+        _FETCHERS["xai"] = mock_fetcher
+        try:
+            models = list_models("xai", use_cache=False, timeout=7.5)
+
+            assert models == ["grok-beta"]
+            mock_fetcher.assert_called_once_with(timeout=7.5)
+        finally:
+            _FETCHERS["xai"] = original_fetcher
+
 
 # =============================================================================
 # Test: List All Models
@@ -1135,6 +1155,23 @@ class TestListAllModels:
         finally:
             _FETCHERS["openai"] = original_openai
             _FETCHERS["anthropic"] = original_anthropic
+
+    def test_list_all_models_forwards_timeout(
+        self,
+        mock_env_clean: None,
+        mock_xai_key: str,
+        temp_cache_dir: Path,
+    ) -> None:
+        """Forwards timeout through list_all_models."""
+        from ai_infra.llm.providers.discovery import list_all_models
+
+        with patch("ai_infra.llm.providers.discovery.list_models") as mock_list:
+            mock_list.return_value = ["grok-beta"]
+
+            result = list_all_models(timeout=7.5)
+
+        assert result == {"xai": ["grok-beta"]}
+        mock_list.assert_called_once_with("xai", refresh=False, use_cache=True, timeout=7.5)
 
 
 # =============================================================================
@@ -1263,35 +1300,48 @@ class TestXaiFetcher:
         """Successfully fetches xAI models."""
         from ai_infra.llm.providers.discovery import _list_xai_models
 
-        mock_client = MagicMock()
-        mock_model1 = MagicMock()
-        mock_model1.id = "grok-beta"
-        mock_model2 = MagicMock()
-        mock_model2.id = "grok-vision-beta"
-        mock_client.models.list.return_value = MagicMock(data=[mock_model1, mock_model2])
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "data": [
+                {"id": "grok-beta"},
+                {"id": "grok-vision-beta"},
+            ]
+        }
 
-        with patch("openai.OpenAI", return_value=mock_client):
+        with patch("httpx.get", return_value=mock_response):
             models = _list_xai_models()
 
         assert "grok-beta" in models
         assert "grok-vision-beta" in models
 
-    def test_list_xai_models_uses_correct_base_url(
+    def test_list_xai_models_forwards_timeout(
         self, mock_env_clean: None, mock_xai_key: str
     ) -> None:
-        """Uses xAI base URL."""
+        """Forwards caller-provided timeout to xAI model discovery."""
         from ai_infra.llm.providers.discovery import _list_xai_models
 
-        with patch("openai.OpenAI") as mock_class:
-            mock_client = MagicMock()
-            mock_client.models.list.return_value = MagicMock(data=[])
-            mock_class.return_value = mock_client
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"data": []}
 
+        with patch("httpx.get", return_value=mock_response) as mock_get:
+            _list_xai_models(timeout=7.5)
+
+        assert mock_get.call_args.kwargs["timeout"] == 7.5
+
+    def test_list_xai_models_uses_xai_models_endpoint(
+        self, mock_env_clean: None, mock_xai_key: str
+    ) -> None:
+        """Uses xAI's models endpoint."""
+        from ai_infra.llm.providers.discovery import _list_xai_models
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"data": []}
+
+        with patch("httpx.get", return_value=mock_response) as mock_get:
             _list_xai_models()
 
-            # Check that base_url was set correctly
-            call_kwargs = mock_class.call_args[1]
-            assert call_kwargs["base_url"] == "https://api.x.ai/v1"
+            assert mock_get.call_args.args[0] == "https://api.x.ai/v1/models"
+            assert mock_get.call_args.kwargs["headers"]["Authorization"] == f"Bearer {mock_xai_key}"
 
     def test_list_xai_models_error_returns_empty(
         self, mock_env_clean: None, mock_xai_key: str
@@ -1299,8 +1349,8 @@ class TestXaiFetcher:
         """Returns empty list on API error."""
         from ai_infra.llm.providers.discovery import _list_xai_models
 
-        with patch("openai.OpenAI") as mock_class:
-            mock_class.side_effect = Exception("API Error")
+        with patch("httpx.get") as mock_get:
+            mock_get.side_effect = Exception("API Error")
 
             models = _list_xai_models()
 

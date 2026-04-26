@@ -5,7 +5,7 @@ OpenAI supports:
 - Embeddings: text-embedding-3-small/large
 - TTS: tts-1, tts-1-hd
 - STT: whisper-1
-- ImageGen: DALL-E 2/3
+- ImageGen: GPT Image 1.5/1/mini, DALL-E 2/3
 - Realtime: gpt-4o-realtime-preview
 """
 
@@ -68,14 +68,52 @@ OPENAI = ProviderConfig(
             features=["timestamps", "word_timestamps", "language_detection"],
         ),
         ProviderCapability.IMAGEGEN: CapabilityConfig(
-            models=["dall-e-2", "dall-e-3"],
-            default_model="dall-e-3",
-            features=["revised_prompt", "hd_quality", "style"],
+            models=[
+                "gpt-image-1.5",
+                "gpt-image-1",
+                "gpt-image-1-mini",
+                "dall-e-2",
+                "dall-e-3",
+            ],
+            default_model="gpt-image-1.5",
+            features=[
+                "revised_prompt",
+                "b64_json",
+                "quality_levels",
+                "background",
+                "output_format",
+                "output_compression",
+                "transparent_background",
+                "input_fidelity",
+                "moderation",
+                "style",
+                "hd_quality",
+            ],
             extra={
                 "sizes": {
+                    "gpt-image-1.5": ["1024x1024", "1024x1536", "1536x1024", "auto"],
+                    "gpt-image-1": ["1024x1024", "1024x1536", "1536x1024", "auto"],
+                    "gpt-image-1-mini": ["1024x1024", "1024x1536", "1536x1024", "auto"],
                     "dall-e-2": ["256x256", "512x512", "1024x1024"],
                     "dall-e-3": ["1024x1024", "1792x1024", "1024x1792"],
-                }
+                },
+                "qualities": {
+                    "gpt-image-1.5": ["auto", "low", "medium", "high"],
+                    "gpt-image-1": ["auto", "low", "medium", "high"],
+                    "gpt-image-1-mini": ["auto", "low", "medium", "high"],
+                    "dall-e-2": ["standard"],
+                    "dall-e-3": ["standard", "hd"],
+                },
+                "backgrounds": {
+                    "gpt-image-1.5": ["auto", "opaque", "transparent"],
+                    "gpt-image-1": ["auto", "opaque", "transparent"],
+                    "gpt-image-1-mini": ["auto", "opaque", "transparent"],
+                },
+                "output_formats": {
+                    "gpt-image-1.5": ["png", "jpeg", "webp"],
+                    "gpt-image-1": ["png", "jpeg", "webp"],
+                    "gpt-image-1-mini": ["png", "jpeg", "webp"],
+                },
             },
         ),
         ProviderCapability.REALTIME: CapabilityConfig(

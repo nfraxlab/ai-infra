@@ -1,6 +1,7 @@
 """Tests for tool execution configuration (error handling, timeout, validation)."""
 
 import asyncio
+from unittest.mock import MagicMock
 
 import pytest
 from langchain_core.tools import tool as lc_tool
@@ -110,6 +111,26 @@ class TestWrapToolWithExecutionConfig:
         wrapped = wrap_tool_with_execution_config(my_lc_tool, config)
         result = wrapped.invoke({"x": 5})
         assert result == "LC Result: 5"
+
+    def test_visualization_results_bypass_generic_truncation(self):
+        """create_visualization payloads keep full prefixed HTML results."""
+        from langchain_core.tools import BaseTool
+
+        from ai_infra.llm.tools.hitl import _ExecutionConfigWrappedTool
+
+        base_tool = MagicMock(spec=BaseTool)
+        base_tool.name = "create_visualization"
+        base_tool.description = "Create a visualization"
+
+        config = ToolExecutionConfig(max_result_chars=100)
+        wrapped = _ExecutionConfigWrappedTool(base_tool, config)
+
+        html = "<!--PULSE_VIZ-->" + ("X" * 1000)
+
+        preserved = wrapped._truncate_result(html)
+
+        assert preserved == html
+        assert "[TRUNCATED:" not in preserved
 
 
 class TestErrorHandling:

@@ -34,6 +34,7 @@ def mock_env_clean(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("GEMINI_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
     monkeypatch.delenv("GOOGLE_GENAI_API_KEY", raising=False)  # Alt env var
+    monkeypatch.delenv("XAI_API_KEY", raising=False)
     monkeypatch.delenv("STABILITY_API_KEY", raising=False)
     monkeypatch.delenv("REPLICATE_API_TOKEN", raising=False)
 
@@ -51,6 +52,14 @@ def mock_google_key(monkeypatch: pytest.MonkeyPatch) -> str:
     """Set Google/Gemini API key."""
     key = "AIza-test-google-key"
     monkeypatch.setenv("GEMINI_API_KEY", key)
+    return key
+
+
+@pytest.fixture
+def mock_xai_key(monkeypatch: pytest.MonkeyPatch) -> str:
+    """Set xAI API key."""
+    key = "test-xai-key"
+    monkeypatch.setenv("XAI_API_KEY", key)
     return key
 
 
@@ -74,6 +83,7 @@ def mock_replicate_key(monkeypatch: pytest.MonkeyPatch) -> str:
 def mock_all_keys(
     mock_openai_key: str,
     mock_google_key: str,
+    mock_xai_key: str,
     mock_stability_key: str,
     mock_replicate_key: str,
 ) -> dict[str, str]:
@@ -81,6 +91,7 @@ def mock_all_keys(
     return {
         "openai": mock_openai_key,
         "google": mock_google_key,
+        "xai": mock_xai_key,
         "stability": mock_stability_key,
         "replicate": mock_replicate_key,
     }
@@ -200,6 +211,13 @@ class TestListConfiguredProviders:
         providers = list_configured_providers()
         assert "replicate" in providers
 
+    def test_xai_configured(self, mock_env_clean: None, mock_xai_key: str) -> None:
+        """Returns xAI when XAI_API_KEY is set."""
+        from ai_infra.imagegen.discovery import list_configured_providers
+
+        providers = list_configured_providers()
+        assert "xai" in providers
+
     def test_multiple_providers_configured(
         self, mock_env_clean: None, mock_all_keys: dict[str, str]
     ) -> None:
@@ -209,6 +227,7 @@ class TestListConfiguredProviders:
         providers = list_configured_providers()
         assert "openai" in providers
         assert "google" in providers
+        assert "xai" in providers
         assert "stability" in providers
         assert "replicate" in providers
 
@@ -256,6 +275,18 @@ class TestIsProviderConfigured:
         from ai_infra.imagegen.discovery import is_provider_configured
 
         assert is_provider_configured("stability") is True
+
+    def test_xai_not_configured(self, mock_env_clean: None) -> None:
+        """Returns False when xAI API key is not set."""
+        from ai_infra.imagegen.discovery import is_provider_configured
+
+        assert is_provider_configured("xai") is False
+
+    def test_xai_configured(self, mock_env_clean: None, mock_xai_key: str) -> None:
+        """Returns True when xAI API key is set."""
+        from ai_infra.imagegen.discovery import is_provider_configured
+
+        assert is_provider_configured("xai") is True
 
     def test_replicate_not_configured(self, mock_env_clean: None) -> None:
         """Returns False when Replicate API token is not set."""
@@ -306,6 +337,13 @@ class TestGetApiKey:
         key = get_api_key("replicate")
         assert key == mock_replicate_key
 
+    def test_get_xai_key(self, mock_env_clean: None, mock_xai_key: str) -> None:
+        """Returns xAI API key when set."""
+        from ai_infra.imagegen.discovery import get_api_key
+
+        key = get_api_key("xai")
+        assert key == mock_xai_key
+
     def test_get_key_not_configured(self, mock_env_clean: None) -> None:
         """Returns None when API key is not set."""
         from ai_infra.imagegen.discovery import get_api_key
@@ -315,57 +353,85 @@ class TestGetApiKey:
 
 
 # =============================================================================
-# Test: Static Model Listing
+# Test: Known Model Listing
 # =============================================================================
 
 
-class TestListModels:
-    """Tests for list_models() function (static model list)."""
+class TestListKnownModels:
+    """Tests for list_known_models() fallback catalog."""
 
     def test_list_openai_models(self) -> None:
-        """Lists static OpenAI image models."""
-        from ai_infra.imagegen.discovery import list_models
+        """Lists known OpenAI image models."""
+        from ai_infra.imagegen.discovery import list_known_models
 
-        models = list_models("openai")
+        models = list_known_models("openai")
         assert isinstance(models, list)
         # Should have DALL-E models
         assert any("dall-e" in m.lower() for m in models) or len(models) >= 0
 
     def test_list_google_models(self) -> None:
-        """Lists static Google image models."""
-        from ai_infra.imagegen.discovery import list_models
+        """Lists known Google image models."""
+        from ai_infra.imagegen.discovery import list_known_models
 
-        models = list_models("google")
+        models = list_known_models("google")
         assert isinstance(models, list)
 
     def test_list_stability_models(self) -> None:
-        """Lists static Stability image models."""
-        from ai_infra.imagegen.discovery import list_models
+        """Lists known Stability image models."""
+        from ai_infra.imagegen.discovery import list_known_models
 
-        models = list_models("stability")
+        models = list_known_models("stability")
         assert isinstance(models, list)
 
     def test_list_replicate_models(self) -> None:
-        """Lists static Replicate image models."""
-        from ai_infra.imagegen.discovery import list_models
+        """Lists known Replicate image models."""
+        from ai_infra.imagegen.discovery import list_known_models
 
-        models = list_models("replicate")
+        models = list_known_models("replicate")
         assert isinstance(models, list)
 
-    def test_list_models_unknown_provider_raises(self) -> None:
+    def test_list_xai_models(self) -> None:
+        """Lists known xAI image models."""
+        from ai_infra.imagegen.discovery import list_known_models
+
+        models = list_known_models("xai")
+        assert models == ["grok-imagine-image"]
+
+    def test_list_known_models_unknown_provider_raises(self) -> None:
         """Raises ValueError for unknown provider."""
-        from ai_infra.imagegen.discovery import list_models
+        from ai_infra.imagegen.discovery import list_known_models
 
         with pytest.raises(ValueError, match="Unknown provider"):
-            list_models("unknown_provider")
+            list_known_models("unknown_provider")
 
-    def test_list_models_returns_list_of_strings(self) -> None:
-        """list_models returns list of strings."""
-        from ai_infra.imagegen.discovery import list_models
+    def test_list_known_models_returns_list_of_strings(self) -> None:
+        """list_known_models returns list of strings."""
+        from ai_infra.imagegen.discovery import list_known_models
 
-        models = list_models("openai")
+        models = list_known_models("openai")
         for model in models:
             assert isinstance(model, str)
+
+
+class TestListModels:
+    """Tests for list_models() live discovery wrapper."""
+
+    def test_list_models_delegates_to_live_discovery(self) -> None:
+        """list_models delegates to list_available_models."""
+        from ai_infra.imagegen.discovery import list_models
+
+        with patch("ai_infra.imagegen.discovery.list_available_models") as mock_list:
+            mock_list.return_value = ["gpt-image-1-mini"]
+
+            result = list_models("openai", refresh=True, use_cache=False, timeout=7.5)
+
+        assert result == ["gpt-image-1-mini"]
+        mock_list.assert_called_once_with(
+            "openai",
+            refresh=True,
+            use_cache=False,
+            timeout=7.5,
+        )
 
 
 # =============================================================================
@@ -584,6 +650,45 @@ class TestGoogleFetcher:
         # gemini-1.5-pro should be filtered out (no 'image' in name)
 
 
+class TestXaiFetcher:
+    """Tests for _fetch_xai_models() function."""
+
+    def test_fetch_xai_models_success(self, mock_env_clean: None, mock_xai_key: str) -> None:
+        """Successfully fetches xAI image models."""
+        from ai_infra.imagegen.discovery import _fetch_xai_models
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "data": [
+                {"id": "grok-imagine-image"},
+                {"id": "grok-imagine-image-pro"},
+                {"id": "grok-imagine-video"},
+                {"id": "grok-4"},
+            ]
+        }
+
+        with patch("httpx.get", return_value=mock_response) as mock_get:
+            models = _fetch_xai_models()
+
+        assert models == ["grok-imagine-image", "grok-imagine-image-pro"]
+        assert mock_get.call_args.args[0] == "https://api.x.ai/v1/models"
+        assert mock_get.call_args.kwargs["headers"]["Authorization"] == f"Bearer {mock_xai_key}"
+
+    def test_fetch_xai_models_forwards_timeout(
+        self, mock_env_clean: None, mock_xai_key: str
+    ) -> None:
+        """Forwards caller-provided timeout to the xAI request."""
+        from ai_infra.imagegen.discovery import _fetch_xai_models
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"data": []}
+
+        with patch("httpx.get", return_value=mock_response) as mock_get:
+            _fetch_xai_models(timeout=12.5)
+
+        assert mock_get.call_args.kwargs["timeout"] == 12.5
+
+
 class TestStabilityFetcher:
     """Tests for _fetch_stability_models() function."""
 
@@ -610,7 +715,7 @@ class TestStabilityFetcher:
         self, mock_env_clean: None, mock_stability_key: str
     ) -> None:
         """Falls back to static list on API error."""
-        from ai_infra.imagegen.discovery import _fetch_stability_models, list_models
+        from ai_infra.imagegen.discovery import _fetch_stability_models, list_known_models
 
         with patch("httpx.get") as mock_get:
             mock_get.side_effect = Exception("API Error")
@@ -618,7 +723,7 @@ class TestStabilityFetcher:
             models = _fetch_stability_models()
 
         # Should return static list
-        static_models = list_models("stability")
+        static_models = list_known_models("stability")
         assert models == static_models
 
 
@@ -627,10 +732,10 @@ class TestReplicateFetcher:
 
     def test_fetch_replicate_models_returns_static_list(self) -> None:
         """Replicate fetcher returns curated static list."""
-        from ai_infra.imagegen.discovery import _fetch_replicate_models, list_models
+        from ai_infra.imagegen.discovery import _fetch_replicate_models, list_known_models
 
         models = _fetch_replicate_models()
-        static_models = list_models("replicate")
+        static_models = list_known_models("replicate")
 
         # Replicate doesn't have a simple list API, so it returns static list
         assert models == static_models
@@ -740,6 +845,26 @@ class TestListAvailableModels:
         finally:
             _FETCHERS["openai"] = original_fetcher
 
+    def test_list_available_models_forwards_timeout_to_xai_fetcher(
+        self,
+        mock_env_clean: None,
+        mock_xai_key: str,
+        temp_cache_dir: Path,
+    ) -> None:
+        """Forwards timeout to the xAI fetcher."""
+        from ai_infra.imagegen.discovery import _FETCHERS, list_available_models
+
+        mock_fetcher = MagicMock(return_value=["grok-imagine-image"])
+        original_fetcher = _FETCHERS["xai"]
+        _FETCHERS["xai"] = mock_fetcher
+        try:
+            models = list_available_models("xai", use_cache=False, timeout=12.5)
+
+            assert models == ["grok-imagine-image"]
+            mock_fetcher.assert_called_once_with(timeout=12.5)
+        finally:
+            _FETCHERS["xai"] = original_fetcher
+
     def test_list_available_models_fetcher_error_fallback(
         self,
         mock_env_clean: None,
@@ -750,7 +875,7 @@ class TestListAvailableModels:
         from ai_infra.imagegen.discovery import (
             _FETCHERS,
             list_available_models,
-            list_models,
+            list_known_models,
         )
 
         mock_fetcher = MagicMock(side_effect=Exception("API Error"))
@@ -760,7 +885,7 @@ class TestListAvailableModels:
             models = list_available_models("openai", use_cache=False)
 
             # Should fall back to static list
-            static_models = list_models("openai")
+            static_models = list_known_models("openai")
             assert models == static_models
         finally:
             _FETCHERS["openai"] = original_fetcher
@@ -848,6 +973,23 @@ class TestListAllAvailableModels:
             _FETCHERS["openai"] = original_openai
             _FETCHERS["google"] = original_google
 
+    def test_list_all_forwards_timeout(
+        self,
+        mock_env_clean: None,
+        mock_xai_key: str,
+        temp_cache_dir: Path,
+    ) -> None:
+        """Forwards timeout through list_all_available_models."""
+        from ai_infra.imagegen.discovery import list_all_available_models
+
+        with patch("ai_infra.imagegen.discovery.list_available_models") as mock_list:
+            mock_list.return_value = ["grok-imagine-image"]
+
+            result = list_all_available_models(timeout=12.5)
+
+        assert result == {"xai": ["grok-imagine-image"]}
+        mock_list.assert_called_once_with("xai", refresh=False, use_cache=True, timeout=12.5)
+
 
 # =============================================================================
 # Test: Constants and Exports
@@ -898,8 +1040,10 @@ class TestModuleExports:
 
         assert "list_providers" in __all__
         assert "list_configured_providers" in __all__
+        assert "list_known_models" in __all__
         assert "list_models" in __all__
         assert "list_available_models" in __all__
+        assert "list_all_models" in __all__
         assert "list_all_available_models" in __all__
         assert "is_provider_configured" in __all__
         assert "get_api_key" in __all__
@@ -928,12 +1072,32 @@ class TestProviderAliases:
         # 'google' should work as an alias
         assert is_provider_configured("google") is True
 
-    def test_list_models_with_alias(self) -> None:
-        """list_models works with 'google' alias."""
-        from ai_infra.imagegen.discovery import list_models
+    def test_list_known_models_with_alias(self) -> None:
+        """list_known_models works with 'google' alias."""
+        from ai_infra.imagegen.discovery import list_known_models
 
         # Should not raise
-        models = list_models("google")
+        models = list_known_models("google")
+        assert isinstance(models, list)
+
+    def test_list_models_with_alias(
+        self,
+        mock_env_clean: None,
+        mock_google_key: str,
+    ) -> None:
+        """list_models uses the live discovery path with the Google alias."""
+        from ai_infra.imagegen.discovery import _FETCHERS, list_models
+
+        mock_fetcher = MagicMock(return_value=["imagen-4.0-fast-generate-001"])
+        original_fetcher = _FETCHERS["google"]
+        _FETCHERS["google"] = mock_fetcher
+        try:
+            models = list_models("google", use_cache=False)
+        finally:
+            _FETCHERS["google"] = original_fetcher
+
+        assert models == ["imagen-4.0-fast-generate-001"]
+        mock_fetcher.assert_called_once_with()
         assert isinstance(models, list)
 
 
@@ -1025,25 +1189,46 @@ class TestIntegrationScenarios:
             _FETCHERS["openai"] = original_openai
             _FETCHERS["stability"] = original_stability
 
-    def test_static_vs_live_models(self, mock_env_clean: None, mock_openai_key: str) -> None:
-        """Static list_models vs live list_available_models."""
+    def test_known_vs_live_models(self, mock_env_clean: None, mock_openai_key: str) -> None:
+        """Known model catalog vs live list_models."""
         from ai_infra.imagegen.discovery import (
             _FETCHERS,
-            list_available_models,
+            list_known_models,
             list_models,
         )
 
-        # Static models don't require API call
-        static_models = list_models("openai")
-        assert isinstance(static_models, list)
+        # Known models don't require API call
+        known_models = list_known_models("openai")
+        assert isinstance(known_models, list)
 
         # Live models use the fetcher
         mock_fetcher = MagicMock(return_value=["dall-e-2", "dall-e-3"])
         original_fetcher = _FETCHERS["openai"]
         _FETCHERS["openai"] = mock_fetcher
         try:
-            live_models = list_available_models("openai", use_cache=False)
+            live_models = list_models("openai", use_cache=False)
             assert live_models == ["dall-e-2", "dall-e-3"]
             mock_fetcher.assert_called_once()
         finally:
             _FETCHERS["openai"] = original_fetcher
+
+
+class TestListAllModelsAlias:
+    """Tests for the LLM-style list_all_models alias."""
+
+    def test_list_all_models_delegates(self) -> None:
+        """list_all_models delegates to list_all_available_models."""
+        from ai_infra.imagegen.discovery import list_all_models
+
+        with patch("ai_infra.imagegen.discovery.list_all_available_models") as mock_list:
+            mock_list.return_value = {"openai": ["gpt-image-1-mini"]}
+
+            result = list_all_models(refresh=True, timeout=9.5)
+
+        assert result == {"openai": ["gpt-image-1-mini"]}
+        mock_list.assert_called_once_with(
+            refresh=True,
+            use_cache=True,
+            skip_unconfigured=True,
+            timeout=9.5,
+        )

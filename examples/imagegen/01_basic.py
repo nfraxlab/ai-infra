@@ -3,7 +3,7 @@
 
 This example demonstrates:
 - Zero-config image generation
-- Multiple providers (OpenAI, Google, Stability, Replicate)
+- Multiple providers (OpenAI, Google, xAI, Stability, Replicate)
 - Different image sizes and quality options
 - Saving and handling generated images
 - Multiple image generation
@@ -11,7 +11,7 @@ This example demonstrates:
 - Provider discovery
 
 ai-infra provides a unified interface for image generation
-across OpenAI DALL-E, Google Imagen/Gemini, Stability AI, and Replicate.
+across OpenAI GPT Image / DALL-E, Google Imagen/Gemini, xAI, Stability AI, and Replicate.
 """
 
 import asyncio
@@ -33,7 +33,8 @@ def zero_config():
     print("=" * 60)
 
     # Auto-detects provider from environment variables
-    # Priority: OPENAI_API_KEY, GOOGLE_API_KEY, STABILITY_API_KEY, REPLICATE_API_TOKEN
+    # Priority: OPENAI_API_KEY, GOOGLE_API_KEY, XAI_API_KEY, STABILITY_API_KEY,
+    # REPLICATE_API_TOKEN
     gen = ImageGen()
 
     print(f"\n  Provider: {gen.provider.value}")
@@ -68,8 +69,9 @@ def explicit_provider():
     print("=" * 60)
 
     providers = [
-        ("openai", "OPENAI_API_KEY", "dall-e-3"),
-        ("google", "GOOGLE_API_KEY", "gemini-2.5-flash-image"),
+        ("openai", "OPENAI_API_KEY", "gpt-image-1.5"),
+        ("google", "GOOGLE_API_KEY", "imagen-4.0-fast-generate-001"),
+        ("xai", "XAI_API_KEY", "grok-imagine-image"),
         ("stability", "STABILITY_API_KEY", "stable-diffusion-xl"),
         ("replicate", "REPLICATE_API_TOKEN", "flux-schnell"),
     ]
@@ -83,8 +85,8 @@ def explicit_provider():
 
     # Example with explicit provider
     if os.getenv("OPENAI_API_KEY"):
-        print("\n  Using OpenAI DALL-E 3:")
-        gen = ImageGen(provider="openai", model="dall-e-3")
+        print("\n  Using OpenAI GPT Image 1.5:")
+        gen = ImageGen(provider="openai", model="gpt-image-1.5")
         print(f"    Provider: {gen.provider.value}")
         print(f"    Model: {gen.model}")
 
@@ -100,11 +102,11 @@ def size_and_quality():
     print("3. Size and Quality Options")
     print("=" * 60)
 
-    print("\nOpenAI DALL-E 3 options:")
+    print("\nOpenAI GPT Image options:")
     options = {
-        "Sizes": ["1024x1024", "1792x1024", "1024x1792"],
-        "Quality": ["standard", "hd"],
-        "Style": ["vivid", "natural"],
+        "Sizes": ["1024x1024", "1536x1024", "1024x1536", "auto"],
+        "Quality": ["auto", "low", "medium", "high"],
+        "Background": ["auto", "opaque", "transparent"],
     }
 
     for option, values in options.items():
@@ -112,18 +114,22 @@ def size_and_quality():
 
     print("\nExample usage:")
     print("""
-    gen = ImageGen(provider="openai", model="dall-e-3")
+    gen = ImageGen(provider="openai", model="gpt-image-1.5")
     images = gen.generate(
         "A futuristic cityscape",
-        size="1792x1024",    # Widescreen
-        quality="hd",        # High quality
-        style="vivid",       # Vibrant colors
+        size="1536x1024",    # Landscape
+        quality="high",      # High quality
+        background="transparent",
     )
 """)
 
-    print("\nGoogle Imagen options:")
-    print("  Sizes: 1024x1024, various aspect ratios")
-    print("  Models: gemini-2.5-flash-image, imagen-3.0-generate-002")
+    print("\nGoogle image options:")
+    print("  Imagen models: imagen-4.0-fast-generate-001, imagen-4.0-generate-001")
+    print("  Gemini models: gemini-3.1-flash-image-preview, gemini-3-pro-image-preview")
+
+    print("\nxAI options:")
+    print("  Model: grok-imagine-image")
+    print("  Provider-native kwargs: aspect_ratio, resolution, image_format")
 
     print("\nStability AI options:")
     print("  Sizes: 1024x1024")
@@ -196,7 +202,8 @@ def multiple_images():
         print(f"Image {i}: {image.url[:50]}...")
 """)
 
-    print("\n  Note: DALL-E 3 supports n=1 only")
+    print("\n  Note: GPT Image models support multiple images")
+    print("        DALL-E 3 supports n=1 only")
     print("        DALL-E 2 supports n=1 to n=10")
     print("        Google Imagen supports multiple images")
 
@@ -278,14 +285,26 @@ def provider_discovery():
     providers = ImageGen.list_providers()
     print(f"\n  Available providers: {providers}")
 
-    # List models per provider
-    print("\n  Models by provider:")
+    # List built-in fallback models per provider
+    print("\n  Known fallback models by provider:")
     for provider in providers:
         try:
-            models = ImageGen.list_models(provider)
+            models = ImageGen.list_known_models(provider)
             print(f"    {provider}: {models}")
         except Exception:
             print(f"    {provider}: (error listing models)")
+
+    # Live discovery for configured providers
+    print("\n  Live models by configured provider:")
+    try:
+        configured_providers = ImageGen.list_configured_providers()
+        if not configured_providers:
+            print("    (no configured providers)")
+        for provider in configured_providers:
+            models = ImageGen.list_models(provider)
+            print(f"    {provider}: {models[:5]}{' ...' if len(models) > 5 else ''}")
+    except Exception:
+        print("    (error fetching live models)")
 
     # Check which are configured
     print("\n  Configured providers:")

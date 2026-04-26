@@ -47,6 +47,7 @@ langsmith = ">=0.4.0"
 
 # Optional LLM provider packages (install via extras)
 langchain-xai = { version = ">=1.0.0", optional = true }
+xai-sdk = { version = ">=1.0.0", optional = true }
 langchain-anthropic = { version = ">=1.0.0", optional = true }
 langchain-google-genai = { version = ">=3.0.0", optional = true }
 
@@ -85,9 +86,9 @@ soundfile = { version = ">=0.12.0", optional = true }
 # LLM providers (optional - install based on which API key you have)
 anthropic = ["langchain-anthropic"]
 google = ["langchain-google-genai", "google-genai"]
-xai = ["langchain-xai"]
+xai = ["langchain-xai", "xai-sdk"]
 # All LLM providers
-llm-all = ["langchain-anthropic", "langchain-google-genai", "google-genai", "langchain-xai"]
+llm-all = ["langchain-anthropic", "langchain-google-genai", "google-genai", "langchain-xai", "xai-sdk"]
 # Voice chat (microphone recording + audio playback)
 voice = ["sounddevice", "soundfile"]
 # Retriever storage backends

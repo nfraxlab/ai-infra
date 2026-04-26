@@ -7,8 +7,9 @@ Usage:
     from ai_infra.imagegen.discovery import (
         list_providers,
         list_configured_providers,
+        list_known_models,
         list_models,
-        list_available_models,
+        list_all_models,
         is_provider_configured,
     )
 
@@ -18,19 +19,23 @@ Usage:
     # List configured providers (have API keys)
     configured = list_configured_providers()
 
-    # List static models for a provider
-    models = list_models("google")
+    # List built-in fallback models for a provider
+    known_models = list_known_models("google")
 
-    # Fetch live models from API
-    live_models = list_available_models("openai")
+    # Fetch live models from the provider API
+    models = list_models("openai")
+
+    # Fetch live models for all configured providers
+    all_models = list_all_models()
 """
 
 from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from ai_infra.providers import ProviderCapability, ProviderRegistry
 
@@ -119,14 +124,14 @@ def list_configured_providers() -> list[str]:
     return [p for p in list_providers() if is_provider_configured(p)]
 
 
-def list_models(provider: str) -> list[str]:
-    """List static/known models for a provider.
+def list_known_models(provider: str) -> list[str]:
+    """List the built-in fallback model catalog for a provider.
 
     Args:
         provider: Provider name.
 
     Returns:
-        List of model names.
+        List of statically known model names.
 
     Raises:
         ValueError: If provider is not supported.
@@ -142,6 +147,35 @@ def list_models(provider: str) -> list[str]:
         raise ValueError(f"Provider {provider} does not support image generation")
 
     return cap.models or []
+
+
+def list_models(
+    provider: str,
+    *,
+    refresh: bool = False,
+    use_cache: bool = True,
+    timeout: float | None = None,
+) -> list[str]:
+    """List live models for a provider by querying the provider API.
+
+    This mirrors the LLM discovery API, so callers can rely on ``list_models``
+    returning live provider data instead of a hardcoded catalog.
+
+    Args:
+        provider: Provider name (e.g., "openai", "google").
+        refresh: Force refresh from API, bypassing cache.
+        use_cache: Whether to use cached results (default: True).
+        timeout: Optional request timeout in seconds for HTTP-based fetchers.
+
+    Returns:
+        List of live model IDs available from the provider.
+    """
+    return list_available_models(
+        provider,
+        refresh=refresh,
+        use_cache=use_cache,
+        timeout=timeout,
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -222,6 +256,34 @@ def _fetch_openai_models() -> list[str]:
     return sorted(image_models)
 
 
+def _fetch_xai_models(*, timeout: float | None = None) -> list[str]:
+    """Fetch available image models from xAI's model listing endpoint."""
+    import httpx
+
+    api_key = get_api_key("xai")
+    request_kwargs: dict[str, Any] = {"headers": {"Authorization": f"Bearer {api_key}"}}
+    if timeout is not None:
+        request_kwargs["timeout"] = timeout
+
+    response = httpx.get("https://api.x.ai/v1/models", **request_kwargs)
+    response.raise_for_status()
+    payload = response.json()
+
+    data = payload.get("data", []) if isinstance(payload, dict) else []
+    models = [model for model in data if isinstance(model, dict)]
+
+    # xAI's /models payload currently exposes only bare IDs for imagine models,
+    # so we filter by the ID itself and explicitly exclude video variants.
+    image_models = [
+        model_id
+        for model in models
+        if isinstance((model_id := model.get("id")), str)
+        and ("imagine" in model_id.lower() or "image" in model_id.lower())
+        and "video" not in model_id.lower()
+    ]
+    return sorted(set(image_models))
+
+
 def _fetch_google_models() -> list[str]:
     """Fetch available image models from Google API."""
     from google import genai
@@ -242,23 +304,24 @@ def _fetch_google_models() -> list[str]:
     return sorted(image_models)
 
 
-def _fetch_stability_models() -> list[str]:
+def _fetch_stability_models(*, timeout: float | None = None) -> list[str]:
     """Fetch available models from Stability AI API."""
     import httpx
 
     api_key = get_api_key("stability")
 
     try:
-        response = httpx.get(
-            "https://api.stability.ai/v1/engines/list",
-            headers={"Authorization": f"Bearer {api_key}"},
-        )
+        request_kwargs: dict[str, Any] = {"headers": {"Authorization": f"Bearer {api_key}"}}
+        if timeout is not None:
+            request_kwargs["timeout"] = timeout
+
+        response = httpx.get("https://api.stability.ai/v1/engines/list", **request_kwargs)
         response.raise_for_status()
         engines = response.json()
         return sorted([e["id"] for e in engines])
     except Exception as e:
         log.warning(f"Failed to fetch Stability models: {e}")
-        return list_models("stability")  # Fall back to static list
+        return list_known_models("stability")  # Fall back to known catalog
 
 
 def _fetch_replicate_models() -> list[str]:
@@ -266,17 +329,32 @@ def _fetch_replicate_models() -> list[str]:
 
     Note: Replicate has thousands of models, so we return curated image models.
     """
-    # Replicate doesn't have a simple "list image models" API
-    # Return our curated list of popular image generation models
-    return list_models("replicate")
+    # Replicate doesn't have a simple "list image models" API,
+    # so return the built-in curated catalog.
+    return list_known_models("replicate")
 
 
-_FETCHERS = {
-    "openai": _fetch_openai_models,
-    "google": _fetch_google_models,
+class _Fetcher(Protocol):
+    def __call__(self, *, timeout: float | None = None) -> list[str]: ...
+
+
+def _wrap_fetcher(fetcher: Callable[[], list[str]]) -> _Fetcher:
+    def wrapped(*, timeout: float | None = None) -> list[str]:
+        _ = timeout
+        return fetcher()
+
+    return wrapped
+
+
+_FETCHERS: dict[str, _Fetcher] = {
+    "openai": _wrap_fetcher(_fetch_openai_models),
+    "google": _wrap_fetcher(_fetch_google_models),
+    "xai": _fetch_xai_models,
     "stability": _fetch_stability_models,
-    "replicate": _fetch_replicate_models,
+    "replicate": _wrap_fetcher(_fetch_replicate_models),
 }
+
+_TIMEOUT_FETCHER_PROVIDERS = frozenset({"xai", "stability"})
 
 
 # -----------------------------------------------------------------------------
@@ -289,6 +367,7 @@ def list_available_models(
     *,
     refresh: bool = False,
     use_cache: bool = True,
+    timeout: float | None = None,
 ) -> list[str]:
     """List available models for a provider by querying the API.
 
@@ -299,6 +378,7 @@ def list_available_models(
         provider: Provider name (e.g., "openai", "google").
         refresh: Force refresh from API, bypassing cache.
         use_cache: Whether to use cached results (default: True).
+        timeout: Optional request timeout in seconds for HTTP-based fetchers.
 
     Returns:
         List of model IDs available from the provider.
@@ -330,32 +410,36 @@ def list_available_models(
         cache = _load_cache()
         if _is_cache_valid(cache, provider):
             log.debug(f"Using cached models for {provider}")
-            models = cache.get(provider, {}).get("models")
-            if isinstance(models, list) and all(isinstance(m, str) for m in models):
-                return models
+            cached_models = cache.get(provider, {}).get("models")
+            if isinstance(cached_models, list) and all(isinstance(m, str) for m in cached_models):
+                return cached_models
 
     # Fetch from API
     log.info(f"Fetching image models from {provider}...")
     fetcher = _FETCHERS.get(provider)
     if not fetcher:
-        return list_models(provider)  # Fall back to static list
+        return list_known_models(provider)  # Fall back to known catalog
 
+    fetched_models: list[str]
     try:
-        models = fetcher()
+        if provider in _TIMEOUT_FETCHER_PROVIDERS:
+            fetched_models = fetcher(timeout=timeout)
+        else:
+            fetched_models = fetcher()
     except Exception as e:
         log.warning(f"Failed to fetch models from {provider}: {e}")
-        return list_models(provider)  # Fall back to static list
+        return list_known_models(provider)  # Fall back to known catalog
 
     # Update cache
-    if use_cache and models:
+    if use_cache and fetched_models:
         cache = _load_cache()
         cache[provider] = {
-            "models": models,
+            "models": fetched_models,
             "timestamp": time.time(),
         }
         _save_cache(cache)
 
-    return models
+    return fetched_models
 
 
 def list_all_available_models(
@@ -363,6 +447,7 @@ def list_all_available_models(
     refresh: bool = False,
     use_cache: bool = True,
     skip_unconfigured: bool = True,
+    timeout: float | None = None,
 ) -> dict[str, list[str]]:
     """List models for all configured providers.
 
@@ -370,6 +455,7 @@ def list_all_available_models(
         refresh: Force refresh from API, bypassing cache.
         use_cache: Whether to use cached results.
         skip_unconfigured: Skip providers without API keys (default: True).
+        timeout: Optional request timeout in seconds for HTTP-based fetchers.
 
     Returns:
         Dict mapping provider name to list of model IDs.
@@ -387,7 +473,12 @@ def list_all_available_models(
                 continue
 
         try:
-            models = list_available_models(provider, refresh=refresh, use_cache=use_cache)
+            models = list_available_models(
+                provider,
+                refresh=refresh,
+                use_cache=use_cache,
+                timeout=timeout,
+            )
             result[provider] = models
         except Exception as e:
             log.warning(f"Failed to list models for {provider}: {e}")
@@ -396,15 +487,47 @@ def list_all_available_models(
     return result
 
 
+def list_all_models(
+    *,
+    refresh: bool = False,
+    use_cache: bool = True,
+    skip_unconfigured: bool = True,
+    timeout: float | None = None,
+) -> dict[str, list[str]]:
+    """List live image models for all configured providers.
+
+    This mirrors the LLM discovery API naming while preserving the existing
+    ``list_all_available_models`` entry point for backwards compatibility.
+
+    Args:
+        refresh: Force refresh from API, bypassing cache.
+        use_cache: Whether to use cached results.
+        skip_unconfigured: Skip providers without API keys (default: True).
+        timeout: Optional request timeout in seconds for HTTP-based fetchers.
+
+    Returns:
+        Dict mapping provider name to live model IDs.
+    """
+    return list_all_available_models(
+        refresh=refresh,
+        use_cache=use_cache,
+        skip_unconfigured=skip_unconfigured,
+        timeout=timeout,
+    )
+
+
 __all__ = [
     "PROVIDER_ENV_VARS",
     "SUPPORTED_PROVIDERS",
     "clear_cache",
     "get_api_key",
     "is_provider_configured",
+    "list_known_models",
+    "list_all_models",
     "list_all_available_models",
     "list_available_models",
     "list_configured_providers",
     "list_models",
     "list_providers",
+    "_FETCHERS",
 ]

@@ -31,9 +31,10 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from ai_infra.providers import ProviderCapability, ProviderRegistry
 
@@ -482,29 +483,58 @@ def _list_google_chat_models() -> list[str]:
     return filter_models_by_capability(models, "google_genai", ModelCapability.CHAT)
 
 
-def _list_xai_models() -> list[str]:
-    """Fetch all models from xAI API (OpenAI-compatible)."""
+def _list_xai_models(*, timeout: float | None = None) -> list[str]:
+    """Fetch all models from xAI's models endpoint."""
     try:
-        import openai
+        import httpx
 
-        client = openai.OpenAI(
-            api_key=get_api_key("xai"),
-            base_url="https://api.x.ai/v1",
-        )
-        models = client.models.list()
+        request_kwargs: dict[str, Any] = {
+            "headers": {"Authorization": f"Bearer {get_api_key('xai')}"},
+        }
+        if timeout is not None:
+            request_kwargs["timeout"] = timeout
+
+        response = httpx.get("https://api.x.ai/v1/models", **request_kwargs)
+        response.raise_for_status()
+        payload = response.json()
+        data = payload.get("data", []) if isinstance(payload, dict) else []
         # xAI only has chat models (Grok)
-        return sorted([m.id for m in models.data])
+        return sorted(
+            model_id
+            for model in data
+            if isinstance(model, dict) and isinstance((model_id := model.get("id")), str)
+        )
     except Exception as e:
         log.warning(f"Failed to fetch xAI models: {e}")
         return []
 
 
+class _Fetcher(Protocol):
+    def __call__(self, *, timeout: float | None = None) -> list[str]: ...
+
+
+def _wrap_fetcher(fetcher: Callable[[], list[str]]) -> _Fetcher:
+    def wrapped(*, timeout: float | None = None) -> list[str]:
+        _ = timeout
+        return fetcher()
+
+    return wrapped
+
+
 # Fetcher dispatch - returns ALL models (use filter_models_by_capability for specific types)
-_FETCHERS = {
+_FETCHERS: dict[str, _Fetcher] = {
+    "openai": _wrap_fetcher(_list_openai_models),
+    "anthropic": _wrap_fetcher(_list_anthropic_models),
+    "google_genai": _wrap_fetcher(_list_google_models),
+    "xai": _list_xai_models,
+}
+
+_TIMEOUT_FETCHER_PROVIDERS = frozenset({"xai"})
+
+_MODEL_FETCHERS: dict[str, Callable[[], list[str]]] = {
     "openai": _list_openai_models,
     "anthropic": _list_anthropic_models,
     "google_genai": _list_google_models,
-    "xai": _list_xai_models,
 }
 
 # Convenience fetchers for chat models specifically
@@ -574,6 +604,7 @@ def list_models(
     capability: ModelCapability | None = None,
     refresh: bool = False,
     use_cache: bool = True,
+    timeout: float | None = None,
 ) -> list[str]:
     """
     List available models for a specific provider.
@@ -584,6 +615,7 @@ def list_models(
                    If None, returns all models.
         refresh: Force refresh from API, bypassing cache
         use_cache: Whether to use cached results (default: True)
+        timeout: Optional request timeout in seconds for HTTP-based fetchers.
 
     Returns:
         List of model IDs available from the provider.
@@ -619,14 +651,14 @@ def list_models(
         if _is_cache_valid(cache, provider):
             log.debug(f"Using cached models for {provider}")
             cached = cache.get(provider, {}).get("models")
-            models: list[str]
+            cached_models: list[str]
             if isinstance(cached, list) and all(isinstance(m, str) for m in cached):
-                models = cached
+                cached_models = cached
             else:
-                models = []
+                cached_models = []
             if capability:
-                return filter_models_by_capability(models, provider, capability)
-            return models
+                return filter_models_by_capability(cached_models, provider, capability)
+            return cached_models
 
     # Fetch from API
     log.info(f"Fetching models from {provider}...")
@@ -634,22 +666,26 @@ def list_models(
     if not fetcher:
         return []
 
-    models = fetcher()
+    fetched_models: list[str]
+    if provider in _TIMEOUT_FETCHER_PROVIDERS:
+        fetched_models = fetcher(timeout=timeout)
+    else:
+        fetched_models = fetcher()
 
     # Update cache
-    if use_cache and models:
+    if use_cache and fetched_models:
         cache = _load_cache()
         cache[provider] = {
-            "models": models,
+            "models": fetched_models,
             "timestamp": time.time(),
         }
         _save_cache(cache)
 
     # Filter by capability if specified
     if capability:
-        return filter_models_by_capability(models, provider, capability)
+        return filter_models_by_capability(fetched_models, provider, capability)
 
-    return models
+    return fetched_models
 
 
 def list_all_models(
@@ -657,6 +693,7 @@ def list_all_models(
     refresh: bool = False,
     use_cache: bool = True,
     skip_unconfigured: bool = True,
+    timeout: float | None = None,
 ) -> dict[str, list[str]]:
     """
     List models for all configured providers.
@@ -665,6 +702,7 @@ def list_all_models(
         refresh: Force refresh from API, bypassing cache
         use_cache: Whether to use cached results
         skip_unconfigured: Skip providers without API keys (default: True)
+        timeout: Optional request timeout in seconds for HTTP-based fetchers.
 
     Returns:
         Dict mapping provider name to list of model IDs.
@@ -682,7 +720,12 @@ def list_all_models(
                 continue
 
         try:
-            models = list_models(provider, refresh=refresh, use_cache=use_cache)
+            models = list_models(
+                provider,
+                refresh=refresh,
+                use_cache=use_cache,
+                timeout=timeout,
+            )
             result[provider] = models
         except Exception as e:
             log.warning(f"Failed to list models for {provider}: {e}")
@@ -712,4 +755,5 @@ __all__ = [
     # Constants
     "SUPPORTED_PROVIDERS",
     "PROVIDER_ENV_VARS",
+    "_FETCHERS",
 ]

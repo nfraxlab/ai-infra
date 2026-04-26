@@ -143,7 +143,7 @@ def test_imagegen_integration():
     print("4. TESTING IMAGEGEN INTEGRATION")
     print("=" * 60)
 
-    from ai_infra.imagegen.discovery import list_models, list_providers
+    from ai_infra.imagegen.discovery import list_known_models, list_providers
     from ai_infra.providers import ProviderCapability, ProviderRegistry
 
     # Test list_providers uses registry
@@ -153,9 +153,9 @@ def test_imagegen_integration():
     # Account for google/google_genai alias
     assert len(providers) == len(registry_ig), "ImageGen provider count mismatch"
 
-    # Test list_models for each provider
+    # Test list_known_models for each provider
     for provider in ["openai", "stability", "replicate"]:
-        models = list_models(provider)
+        models = list_known_models(provider)
         print(f"[OK] {provider} models: {models[:3]}...")
 
         # Verify against registry
@@ -166,7 +166,7 @@ def test_imagegen_integration():
         assert set(models) == set(cap.models), f"Model mismatch for {provider}"
 
     # Test Google (which maps to google_genai)
-    google_models = list_models("google")
+    google_models = list_known_models("google")
     print(f"[OK] Google models: {google_models[:3]}...")
 
     print("\n[OK] ImageGen integration: PASSED")

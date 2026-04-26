@@ -121,7 +121,7 @@ Generate images with multiple providers.
 
 | Module | Description | Doc |
 |--------|-------------|-----|
-| **ImageGen** | DALL-E, Imagen, Stability, Replicate | [imagegen.md](imagegen/imagegen.md) |
+| **ImageGen** | OpenAI GPT Image, Google Gemini/Imagen, xAI, Stability, Replicate | [imagegen.md](imagegen/imagegen.md) |
 
 ---
 
@@ -159,7 +159,7 @@ ai-infra supports **10 providers** across **6 capabilities**:
 | OpenAI | [OK] | [OK] | [OK] | [OK] | [OK] | [OK] |
 | Anthropic | [OK] | - | - | - | - | - |
 | Google | [OK] | [OK] | [OK] | [OK] | [OK] | [OK] |
-| xAI | [OK] | - | - | - | - | - |
+| xAI | [OK] | - | - | - | [OK] | - |
 | ElevenLabs | - | - | [OK] | - | - | - |
 | Deepgram | - | - | - | [OK] | - | - |
 | Stability | - | - | - | - | [OK] | - |

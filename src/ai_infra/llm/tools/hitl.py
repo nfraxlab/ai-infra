@@ -48,6 +48,13 @@ from .approval import (
     console_approval_handler,
 )
 
+_UNTRUNCATED_TOOL_RESULT_PREFIXES: dict[str, tuple[str, ...]] = {
+    # Pulse visualizations are rendered out-of-band by the client. Truncating the
+    # prefixed HTML payload corrupts the inline bootstrap script and makes the
+    # visualization render as title-only.
+    "create_visualization": ("<!--PULSE_VIZ-->",),
+}
+
 if TYPE_CHECKING:
     from .events import ApprovalEvents
 
@@ -702,6 +709,11 @@ class _ExecutionConfigWrappedTool(BaseTool):
         max_chars = self._config.max_result_chars
         if max_chars is None or max_chars == 0:
             return result  # Truncation disabled
+
+        if isinstance(result, str):
+            allowed_prefixes = _UNTRUNCATED_TOOL_RESULT_PREFIXES.get(self.name, ())
+            if allowed_prefixes and result.startswith(allowed_prefixes):
+                return result
 
         # Handle string results
         if isinstance(result, str):

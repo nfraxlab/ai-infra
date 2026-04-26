@@ -7210,6 +7210,33 @@ files = [
 ]
 
 [[package]]
+name = "xai-sdk"
+version = "1.11.0"
+description = "The official Python SDK for the xAI API"
+optional = true
+python-versions = ">=3.10"
+groups = ["main"]
+markers = "extra == \"xai\" or extra == \"llm-all\""
+files = [
+    {file = "xai_sdk-1.11.0-py3-none-any.whl", hash = "sha256:fe58ce6d8f8115ae8bd57ded57bcd847d0bb7cb28bb7b236abefd4626df1ed8d"},
+    {file = "xai_sdk-1.11.0.tar.gz", hash = "sha256:ca87a830d310fb8e06fba44fb2a8c5cdf0d9f716b61126eddd51b7f416a63932"},
+]
+
+[package.dependencies]
+aiohttp = ">=3.8.6,<4"
+googleapis-common-protos = ">=1.65.0,<2"
+grpcio = ">=1.72.1,<2"
+opentelemetry-sdk = ">=1.36.0,<2"
+packaging = ">=25.0,<26"
+protobuf = ">=5.29.4,<7"
+pydantic = ">=2.5.3,<3"
+requests = ">=2.31.0,<3"
+
+[package.extras]
+telemetry-grpc = ["opentelemetry-exporter-otlp-proto-grpc (>=1.36.0,<2)"]
+telemetry-http = ["opentelemetry-exporter-otlp-proto-http (>=1.36.0,<2)"]
+
+[[package]]
 name = "xxhash"
 version = "3.6.0"
 description = "Python binding for xxHash"
@@ -7648,7 +7675,7 @@ faiss = []
 google = ["google-genai", "langchain-google-genai"]
 html = []
 huggingface = ["langchain-huggingface", "sentence-transformers"]
-llm-all = ["google-genai", "langchain-anthropic", "langchain-google-genai", "langchain-xai"]
+llm-all = ["google-genai", "langchain-anthropic", "langchain-google-genai", "langchain-xai", "xai-sdk"]
 local-embeddings = ["langchain-huggingface", "sentence-transformers"]
 ocr = ["pypdfium2", "pytesseract"]
 pdf = []
@@ -7660,9 +7687,9 @@ retriever-all = ["openpyxl", "pypdfium2", "pytesseract"]
 retriever-local = ["langchain-huggingface", "openpyxl", "sentence-transformers"]
 sqlite = []
 voice = ["sounddevice", "soundfile"]
-xai = ["langchain-xai"]
+xai = ["langchain-xai", "xai-sdk"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4.0"
-content-hash = "7fac63c785f2666eb2a3ab4534fe6e6e7d96860d316c0cba4e4849a6efd937f7"
+content-hash = "51de427f8b4c114a51bdd296ad4a491ead6e3c7e65cd36a748d21849d797822c"

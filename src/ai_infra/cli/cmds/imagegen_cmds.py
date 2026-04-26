@@ -4,9 +4,9 @@ CLI commands for image generation provider and model discovery.
 Usage:
     ai-infra image-providers           # List all supported providers
     ai-infra image-providers --configured  # Only configured providers
-    ai-infra image-models --provider google  # List models for a provider
+    ai-infra image-models --provider google  # List live models for a provider
     ai-infra image-models --all        # List models for all configured providers
-    ai-infra image-models --live       # Fetch live models from APIs
+    ai-infra image-models --known      # Use the built-in fallback model catalog
 """
 
 from __future__ import annotations
@@ -18,8 +18,8 @@ import typer
 from ai_infra.imagegen.discovery import (
     SUPPORTED_PROVIDERS,
     is_provider_configured,
-    list_all_available_models,
-    list_available_models,
+    list_all_models,
+    list_known_models,
     list_models,
 )
 
@@ -76,10 +76,9 @@ def models_cmd(
         help="List models for all configured providers",
     ),
     live: bool = typer.Option(
-        False,
-        "--live",
-        "-l",
-        help="Fetch live models from provider APIs",
+        True,
+        "--live/--known",
+        help="Use live provider discovery (default) or the built-in known-model catalog",
     ),
     refresh: bool = typer.Option(
         False,
@@ -102,16 +101,16 @@ def models_cmd(
     if all_providers:
         if live:
             try:
-                result = list_all_available_models(refresh=refresh)
+                result = list_all_models(refresh=refresh)
             except Exception as e:
                 typer.echo(f"Error: {e}", err=True)
                 raise typer.Exit(1)
         else:
-            # Use static models for all configured providers
+            # Use built-in known models for all configured providers
             result = {}
             for prov in SUPPORTED_PROVIDERS:
                 if is_provider_configured(prov):
-                    result[prov] = list_models(prov)
+                    result[prov] = list_known_models(prov)
 
         if output_json:
             typer.echo(json.dumps(result, indent=2))
@@ -135,22 +134,18 @@ def models_cmd(
             raise typer.Exit(1)
 
         if live:
-            if not is_provider_configured(provider):
-                typer.echo(f"Error: Provider '{provider}' is not configured (no API key)")
-                raise typer.Exit(1)
-
             try:
-                models = list_available_models(provider, refresh=refresh)
+                models = list_models(provider, refresh=refresh)
             except Exception as e:
                 typer.echo(f"Error: {e}", err=True)
                 raise typer.Exit(1)
         else:
-            models = list_models(provider)
+            models = list_known_models(provider)
 
         if output_json:
             typer.echo(json.dumps(models, indent=2))
         else:
-            source = "(live)" if live else "(static)"
+            source = "(live)" if live else "(known catalog)"
             typer.echo(f"\n{provider} {source} - {len(models)} models:\n")
             for model in models:
                 typer.echo(f"  • {model}")

@@ -82,6 +82,7 @@ class TestProviderRegistry:
         providers = ProviderRegistry.list_for_capability(ProviderCapability.IMAGEGEN)
         assert "openai" in providers
         assert "google_genai" in providers
+        assert "xai" in providers
         assert "stability" in providers
         assert "replicate" in providers
 
@@ -183,6 +184,18 @@ class TestProviderConfig:
         assert config.has_capability(ProviderCapability.STT)
         assert config.has_capability(ProviderCapability.IMAGEGEN)
         assert config.has_capability(ProviderCapability.REALTIME)
+
+    def test_xai_config(self):
+        """Test xAI provider config."""
+        config = ProviderRegistry.get("xai")
+        assert config is not None
+        assert config.env_var == "XAI_API_KEY"
+        assert config.has_capability(ProviderCapability.CHAT)
+        assert config.has_capability(ProviderCapability.IMAGEGEN)
+
+        imagegen = config.get_capability(ProviderCapability.IMAGEGEN)
+        assert imagegen is not None
+        assert "grok-imagine-image" in imagegen.models
 
     def test_elevenlabs_config(self):
         """Test ElevenLabs provider config (TTS only)."""

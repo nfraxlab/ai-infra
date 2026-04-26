@@ -1,7 +1,7 @@
 {
   "name": "ImageGen",
   "module": "ai_infra.imagegen",
-  "docstring": "Provider-agnostic image generation.\n\nSupports OpenAI (DALL-E), Google (Imagen), Stability AI, and Replicate.\nAuto-detects provider from environment variables if not specified.\n\nExample:\n    ```python\n    # Zero-config: auto-detects from env vars\n    gen = ImageGen()\n    images = gen.generate(\"A sunset over mountains\")\n\n    # Explicit provider and model\n    gen = ImageGen(provider=\"google\", model=\"imagen-4.0-generate-001\")\n    images = gen.generate(\"A futuristic city\", n=2)\n\n    # Save generated image\n    images[0].save(\"output.png\")\n    ```\n\nEnvironment Variables:\n    - OPENAI_API_KEY: For OpenAI DALL-E\n    - GOOGLE_API_KEY or GEMINI_API_KEY: For Google Imagen\n    - STABILITY_API_KEY: For Stability AI\n    - REPLICATE_API_TOKEN: For Replicate",
+  "docstring": "Provider-agnostic image generation.\n\nSupports OpenAI, Google, xAI, Stability AI, and Replicate.\nAuto-detects provider from environment variables if not specified.\n\nExample:\n    ```python\n    # Zero-config: auto-detects from env vars\n    gen = ImageGen()\n    images = gen.generate(\"A sunset over mountains\")\n\n    # Explicit provider and model\n    gen = ImageGen(provider=\"google\", model=\"imagen-4.0-generate-001\")\n    images = gen.generate(\"A futuristic city\", n=2)\n\n    # Save generated image\n    images[0].save(\"output.png\")\n    ```\n\nEnvironment Variables:\n    - OPENAI_API_KEY: For OpenAI GPT Image / DALL-E\n    - GOOGLE_API_KEY or GEMINI_API_KEY: For Google Gemini / Imagen\n    - XAI_API_KEY: For xAI Grok Imagine\n    - STABILITY_API_KEY: For Stability AI\n    - REPLICATE_API_TOKEN: For Replicate",
   "parameters": [
     {
       "name": "provider",
@@ -83,7 +83,7 @@
     },
     {
       "name": "agenerate",
-      "signature": "(prompt: str, size: str = '1024x1024', n: int = 1, quality: Literal['standard', 'hd'] = 'standard', style: Literal['vivid', 'natural'] | None = None, kwargs: Any = {}) -> list[GeneratedImage]",
+      "signature": "(prompt: str, size: str = '1024x1024', n: int = 1, quality: Literal['standard', 'hd', 'low', 'medium', 'high', 'auto'] = 'standard', style: Literal['vivid', 'natural'] | None = None, kwargs: Any = {}) -> list[GeneratedImage]",
       "docstring": "Async version of generate().\n\nArgs:\n    prompt: Text description of the image to generate.\n    size: Image size (e.g., \"1024x1024\", \"1792x1024\").\n    n: Number of images to generate.\n    quality: Image quality (\"standard\" or \"hd\"). OpenAI only.\n    style: Image style (\"vivid\" or \"natural\"). OpenAI DALL-E 3 only.\n    **kwargs: Additional provider-specific options.\n\nReturns:\n    List of GeneratedImage objects.",
       "parameters": [
         {
@@ -116,7 +116,7 @@
         },
         {
           "name": "quality",
-          "type": "Literal['standard', 'hd']",
+          "type": "Literal['standard', 'hd', 'low', 'medium', 'high', 'auto']",
           "default": "'standard'",
           "description": "Image quality (\"standard\" or \"hd\"). OpenAI only.",
           "required": false
@@ -146,7 +146,7 @@
     {
       "name": "edit",
       "signature": "(image: str | bytes, prompt: str, mask: str | bytes | None = None, size: str = '1024x1024', n: int = 1, kwargs: Any = {}) -> list[GeneratedImage]",
-      "docstring": "Edit an existing image based on a prompt.\n\nNote: Currently only supported by OpenAI (DALL-E 2).\n\nArgs:\n    image: Path to image file or image bytes.\n    prompt: Description of the edit to make.\n    mask: Optional mask image (transparent areas will be edited).\n    size: Output image size.\n    n: Number of variations to generate.\n    **kwargs: Additional options.\n\nReturns:\n    List of GeneratedImage objects.",
+      "docstring": "Edit an existing image based on a prompt.\n\nNote: Supported by OpenAI image-edit models.\n\nArgs:\n    image: Path to image file or image bytes.\n    prompt: Description of the edit to make.\n    mask: Optional mask image (transparent areas will be edited).\n    size: Output image size.\n    n: Number of variations to generate.\n    **kwargs: Additional options.\n\nReturns:\n    List of GeneratedImage objects.",
       "parameters": [
         {
           "name": "self",
@@ -207,7 +207,7 @@
     },
     {
       "name": "generate",
-      "signature": "(prompt: str, size: str = '1024x1024', n: int = 1, quality: Literal['standard', 'hd'] = 'standard', style: Literal['vivid', 'natural'] | None = None, kwargs: Any = {}) -> list[GeneratedImage]",
+      "signature": "(prompt: str, size: str = '1024x1024', n: int = 1, quality: Literal['standard', 'hd', 'low', 'medium', 'high', 'auto'] = 'standard', style: Literal['vivid', 'natural'] | None = None, kwargs: Any = {}) -> list[GeneratedImage]",
       "docstring": "Generate images from a text prompt.\n\nArgs:\n    prompt: Text description of the image to generate.\n    size: Image size (e.g., \"1024x1024\", \"1792x1024\").\n    n: Number of images to generate.\n    quality: Image quality (\"standard\" or \"hd\"). OpenAI only.\n    style: Image style (\"vivid\" or \"natural\"). OpenAI DALL-E 3 only.\n    **kwargs: Additional provider-specific options.\n\nReturns:\n    List of GeneratedImage objects.\n\nExample:\n    ```python\n    images = gen.generate(\n        \"A cat wearing a hat\",\n        size=\"1024x1024\",\n        n=2,\n        quality=\"hd\",\n    )\n    for img in images:\n        print(img.url)\n    ```",
       "parameters": [
         {
@@ -240,7 +240,7 @@
         },
         {
           "name": "quality",
-          "type": "Literal['standard', 'hd']",
+          "type": "Literal['standard', 'hd', 'low', 'medium', 'high', 'auto']",
           "default": "'standard'",
           "description": "Image quality (\"standard\" or \"hd\"). OpenAI only.",
           "required": false
@@ -268,9 +268,56 @@
       "raises": null
     },
     {
-      "name": "list_models",
-      "signature": "(provider: str) -> list[str]",
-      "docstring": "List available models for a provider.\n\nArgs:\n    provider: Provider name.\n\nReturns:\n    List of model names.",
+      "name": "is_provider_configured",
+      "signature": "(provider: str) -> bool",
+      "docstring": "Check whether an image generation provider is configured.",
+      "parameters": [
+        {
+          "name": "provider",
+          "type": "str",
+          "default": null,
+          "description": null,
+          "required": true
+        }
+      ],
+      "returns": "bool",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": true,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_all_models",
+      "signature": "(refresh: bool = False, timeout: float | None = None) -> dict[str, list[str]]",
+      "docstring": "List live models for all configured image generation providers.\n\nArgs:\n    refresh: Force refresh from API, bypassing cache.\n    timeout: Optional request timeout in seconds for HTTP-based fetchers.\n\nReturns:\n    Dict mapping provider names to lists of live model IDs.",
+      "parameters": [
+        {
+          "name": "refresh",
+          "type": "bool",
+          "default": "False",
+          "description": "Force refresh from API, bypassing cache.",
+          "required": false
+        },
+        {
+          "name": "timeout",
+          "type": "float | None",
+          "default": "None",
+          "description": "Optional request timeout in seconds for HTTP-based fetchers.",
+          "required": false
+        }
+      ],
+      "returns": "dict[str, list[str]]",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": true,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_available_models",
+      "signature": "(provider: str, refresh: bool = False, timeout: float | None = None) -> list[str]",
+      "docstring": "List live models for a provider by querying the provider API.\n\nThis explicit alias is kept for backwards compatibility.\n\nArgs:\n    provider: Provider name.\n    refresh: Force refresh from API, bypassing cache.\n    timeout: Optional request timeout in seconds for HTTP-based fetchers.\n\nReturns:\n    List of live model IDs available from the provider.",
       "parameters": [
         {
           "name": "provider",
@@ -278,6 +325,86 @@
           "default": null,
           "description": "Provider name.",
           "required": true
+        },
+        {
+          "name": "refresh",
+          "type": "bool",
+          "default": "False",
+          "description": "Force refresh from API, bypassing cache.",
+          "required": false
+        },
+        {
+          "name": "timeout",
+          "type": "float | None",
+          "default": "None",
+          "description": "Optional request timeout in seconds for HTTP-based fetchers.",
+          "required": false
+        }
+      ],
+      "returns": "list[str]",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": true,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_configured_providers",
+      "signature": "() -> list[str]",
+      "docstring": "List configured image generation providers.",
+      "parameters": [],
+      "returns": "list[str]",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": true,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_known_models",
+      "signature": "(provider: str) -> list[str]",
+      "docstring": "List the built-in fallback model catalog for a provider.\n\nArgs:\n    provider: Provider name.\n\nReturns:\n    List of statically known model names.",
+      "parameters": [
+        {
+          "name": "provider",
+          "type": "str",
+          "default": null,
+          "description": "Provider name.",
+          "required": true
+        }
+      ],
+      "returns": "list[str]",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": true,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_models",
+      "signature": "(provider: str, refresh: bool = False, timeout: float | None = None) -> list[str]",
+      "docstring": "List live models for a provider by querying the provider API.\n\nArgs:\n    provider: Provider name.\n    refresh: Force refresh from API, bypassing cache.\n    timeout: Optional request timeout in seconds for HTTP-based fetchers.\n\nReturns:\n    List of live model IDs available from the provider.",
+      "parameters": [
+        {
+          "name": "provider",
+          "type": "str",
+          "default": null,
+          "description": "Provider name.",
+          "required": true
+        },
+        {
+          "name": "refresh",
+          "type": "bool",
+          "default": "False",
+          "description": "Force refresh from API, bypassing cache.",
+          "required": false
+        },
+        {
+          "name": "timeout",
+          "type": "float | None",
+          "default": "None",
+          "description": "Optional request timeout in seconds for HTTP-based fetchers.",
+          "required": false
         }
       ],
       "returns": "list[str]",
@@ -350,5 +477,5 @@
   ],
   "bases": [],
   "source_file": "src/ai_infra/imagegen/imagegen.py",
-  "source_line": 22
+  "source_line": 336
 }
