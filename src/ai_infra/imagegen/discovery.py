@@ -334,21 +334,27 @@ def _fetch_replicate_models() -> list[str]:
     return list_known_models("replicate")
 
 
-_LIVE_FETCHERS: dict[str, Callable[[], list[str]]] = {
-    "openai": _fetch_openai_models,
-    "google": _fetch_google_models,
-    "replicate": _fetch_replicate_models,
-}
-
-
-class _TimeoutFetcher(Protocol):
+class _Fetcher(Protocol):
     def __call__(self, *, timeout: float | None = None) -> list[str]: ...
 
 
-_TIMEOUT_FETCHERS: dict[str, _TimeoutFetcher] = {
+def _wrap_fetcher(fetcher: Callable[[], list[str]]) -> _Fetcher:
+    def wrapped(*, timeout: float | None = None) -> list[str]:
+        _ = timeout
+        return fetcher()
+
+    return wrapped
+
+
+_FETCHERS: dict[str, _Fetcher] = {
+    "openai": _wrap_fetcher(_fetch_openai_models),
+    "google": _wrap_fetcher(_fetch_google_models),
     "xai": _fetch_xai_models,
     "stability": _fetch_stability_models,
+    "replicate": _wrap_fetcher(_fetch_replicate_models),
 }
+
+_TIMEOUT_FETCHER_PROVIDERS = frozenset({"xai", "stability"})
 
 
 # -----------------------------------------------------------------------------
@@ -410,16 +416,16 @@ def list_available_models(
 
     # Fetch from API
     log.info(f"Fetching image models from {provider}...")
+    fetcher = _FETCHERS.get(provider)
+    if not fetcher:
+        return list_known_models(provider)  # Fall back to known catalog
+
     fetched_models: list[str]
     try:
-        if provider in _TIMEOUT_FETCHERS:
-            timeout_fetcher = _TIMEOUT_FETCHERS[provider]
-            fetched_models = timeout_fetcher(timeout=timeout)
+        if provider in _TIMEOUT_FETCHER_PROVIDERS:
+            fetched_models = fetcher(timeout=timeout)
         else:
-            live_fetcher = _LIVE_FETCHERS.get(provider)
-            if not live_fetcher:
-                return list_known_models(provider)  # Fall back to known catalog
-            fetched_models = live_fetcher()
+            fetched_models = fetcher()
     except Exception as e:
         log.warning(f"Failed to fetch models from {provider}: {e}")
         return list_known_models(provider)  # Fall back to known catalog
@@ -523,4 +529,5 @@ __all__ = [
     "list_configured_providers",
     "list_models",
     "list_providers",
+    "_FETCHERS",
 ]

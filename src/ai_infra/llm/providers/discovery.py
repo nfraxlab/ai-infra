@@ -34,7 +34,7 @@ import time
 from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from ai_infra.providers import ProviderCapability, ProviderRegistry
 
@@ -509,7 +509,28 @@ def _list_xai_models(*, timeout: float | None = None) -> list[str]:
         return []
 
 
+class _Fetcher(Protocol):
+    def __call__(self, *, timeout: float | None = None) -> list[str]: ...
+
+
+def _wrap_fetcher(fetcher: Callable[[], list[str]]) -> _Fetcher:
+    def wrapped(*, timeout: float | None = None) -> list[str]:
+        _ = timeout
+        return fetcher()
+
+    return wrapped
+
+
 # Fetcher dispatch - returns ALL models (use filter_models_by_capability for specific types)
+_FETCHERS: dict[str, _Fetcher] = {
+    "openai": _wrap_fetcher(_list_openai_models),
+    "anthropic": _wrap_fetcher(_list_anthropic_models),
+    "google_genai": _wrap_fetcher(_list_google_models),
+    "xai": _list_xai_models,
+}
+
+_TIMEOUT_FETCHER_PROVIDERS = frozenset({"xai"})
+
 _MODEL_FETCHERS: dict[str, Callable[[], list[str]]] = {
     "openai": _list_openai_models,
     "anthropic": _list_anthropic_models,
@@ -641,13 +662,14 @@ def list_models(
 
     # Fetch from API
     log.info(f"Fetching models from {provider}...")
+    fetcher = _FETCHERS.get(provider)
+    if not fetcher:
+        return []
+
     fetched_models: list[str]
-    if provider == "xai":
-        fetched_models = _list_xai_models(timeout=timeout)
+    if provider in _TIMEOUT_FETCHER_PROVIDERS:
+        fetched_models = fetcher(timeout=timeout)
     else:
-        fetcher = _MODEL_FETCHERS.get(provider)
-        if not fetcher:
-            return []
         fetched_models = fetcher()
 
     # Update cache
@@ -733,4 +755,5 @@ __all__ = [
     # Constants
     "SUPPORTED_PROVIDERS",
     "PROVIDER_ENV_VARS",
+    "_FETCHERS",
 ]
