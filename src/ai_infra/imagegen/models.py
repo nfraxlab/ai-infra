@@ -11,6 +11,7 @@ class ImageGenProvider(StrEnum):
 
     OPENAI = "openai"
     GOOGLE = "google"
+    XAI = "xai"
     STABILITY = "stability"
     REPLICATE = "replicate"
 
@@ -76,25 +77,37 @@ class GeneratedImage:
 
 # Default models per provider
 DEFAULT_MODELS = {
-    ImageGenProvider.OPENAI: "dall-e-3",
-    ImageGenProvider.GOOGLE: "gemini-2.5-flash-image",  # Gemini multimodal (more accessible)
+    ImageGenProvider.OPENAI: "gpt-image-1.5",
+    ImageGenProvider.GOOGLE: "imagen-4.0-fast-generate-001",  # Dedicated image generation API
+    ImageGenProvider.XAI: "grok-imagine-image",
     ImageGenProvider.STABILITY: "stable-diffusion-xl-1024-v1-0",
     ImageGenProvider.REPLICATE: "black-forest-labs/flux-schnell",
 }
 
 # Available models per provider
 AVAILABLE_MODELS = {
-    ImageGenProvider.OPENAI: ["dall-e-2", "dall-e-3"],
+    ImageGenProvider.OPENAI: [
+        "gpt-image-1.5",
+        "gpt-image-1",
+        "gpt-image-1-mini",
+        "dall-e-2",
+        "dall-e-3",
+    ],
     ImageGenProvider.GOOGLE: [
         # Gemini multimodal image generation (uses generate_content API)
+        "gemini-3.1-flash-image-preview",
         "gemini-2.5-flash-image",
         "gemini-2.0-flash-exp-image-generation",
         "gemini-3-pro-image-preview",  # Nano Banana Pro
         # Imagen models (uses generate_images API, requires billing)
+        "imagen-4.0-ultra-generate-001",
         "imagen-3.0-generate-002",
+        "imagen-3.0-generate-001",
+        "imagen-3.0-fast-generate-001",
         "imagen-4.0-generate-001",
         "imagen-4.0-fast-generate-001",
     ],
+    ImageGenProvider.XAI: ["grok-imagine-image"],
     ImageGenProvider.STABILITY: [
         "stable-diffusion-xl-1024-v1-0",
         "stable-diffusion-v1-6",
@@ -108,6 +121,7 @@ AVAILABLE_MODELS = {
 
 # Gemini models use generate_content API, Imagen models use generate_images API
 GEMINI_IMAGE_MODELS = {
+    "gemini-3.1-flash-image-preview",
     "gemini-2.5-flash-image",
     "gemini-2.0-flash-exp-image-generation",
     "gemini-2.5-flash-image-preview",

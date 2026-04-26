@@ -482,18 +482,27 @@ def _list_google_chat_models() -> list[str]:
     return filter_models_by_capability(models, "google_genai", ModelCapability.CHAT)
 
 
-def _list_xai_models() -> list[str]:
-    """Fetch all models from xAI API (OpenAI-compatible)."""
+def _list_xai_models(*, timeout: float | None = None) -> list[str]:
+    """Fetch all models from xAI's models endpoint."""
     try:
-        import openai
+        import httpx
 
-        client = openai.OpenAI(
-            api_key=get_api_key("xai"),
-            base_url="https://api.x.ai/v1",
-        )
-        models = client.models.list()
+        request_kwargs: dict[str, Any] = {
+            "headers": {"Authorization": f"Bearer {get_api_key('xai')}"},
+        }
+        if timeout is not None:
+            request_kwargs["timeout"] = timeout
+
+        response = httpx.get("https://api.x.ai/v1/models", **request_kwargs)
+        response.raise_for_status()
+        payload = response.json()
+        data = payload.get("data", []) if isinstance(payload, dict) else []
         # xAI only has chat models (Grok)
-        return sorted([m.id for m in models.data])
+        return sorted(
+            model_id
+            for model in data
+            if isinstance(model, dict) and isinstance((model_id := model.get("id")), str)
+        )
     except Exception as e:
         log.warning(f"Failed to fetch xAI models: {e}")
         return []
@@ -574,6 +583,7 @@ def list_models(
     capability: ModelCapability | None = None,
     refresh: bool = False,
     use_cache: bool = True,
+    timeout: float | None = None,
 ) -> list[str]:
     """
     List available models for a specific provider.
@@ -584,6 +594,7 @@ def list_models(
                    If None, returns all models.
         refresh: Force refresh from API, bypassing cache
         use_cache: Whether to use cached results (default: True)
+        timeout: Optional request timeout in seconds for HTTP-based fetchers.
 
     Returns:
         List of model IDs available from the provider.
@@ -634,7 +645,10 @@ def list_models(
     if not fetcher:
         return []
 
-    models = fetcher()
+    if provider == "xai":
+        models = fetcher(timeout=timeout)
+    else:
+        models = fetcher()
 
     # Update cache
     if use_cache and models:
@@ -657,6 +671,7 @@ def list_all_models(
     refresh: bool = False,
     use_cache: bool = True,
     skip_unconfigured: bool = True,
+    timeout: float | None = None,
 ) -> dict[str, list[str]]:
     """
     List models for all configured providers.
@@ -665,6 +680,7 @@ def list_all_models(
         refresh: Force refresh from API, bypassing cache
         use_cache: Whether to use cached results
         skip_unconfigured: Skip providers without API keys (default: True)
+        timeout: Optional request timeout in seconds for HTTP-based fetchers.
 
     Returns:
         Dict mapping provider name to list of model IDs.
@@ -682,7 +698,12 @@ def list_all_models(
                 continue
 
         try:
-            models = list_models(provider, refresh=refresh, use_cache=use_cache)
+            models = list_models(
+                provider,
+                refresh=refresh,
+                use_cache=use_cache,
+                timeout=timeout,
+            )
             result[provider] = models
         except Exception as e:
             log.warning(f"Failed to list models for {provider}: {e}")

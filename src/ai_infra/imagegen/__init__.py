@@ -1,8 +1,9 @@
 """Image generation module with provider-agnostic API.
 
 Supports multiple providers:
-- OpenAI (DALL-E 2, DALL-E 3)
-- Google (Gemini 2.5 Flash Image, Imagen 3, Imagen 4 / Nano Banana Pro)
+- OpenAI (GPT Image 1.5/1/mini, DALL-E 2/3)
+- Google (Gemini 3.1 Flash Image Preview, Gemini 3 Pro Image Preview, Imagen 3/4)
+- xAI (Grok Imagine image generation and editing)
 - Stability AI (Stable Diffusion)
 - Replicate (SDXL, Flux, etc.)
 
@@ -16,13 +17,13 @@ Example:
     # Generate an image
     images = gen.generate("A sunset over mountains")
 
-    # With specific provider (default is gemini-2.5-flash-image)
+    # With specific provider (default is imagen-4.0-fast-generate-001)
     gen = ImageGen(provider="google")
     images = gen.generate("A futuristic city", size="1024x1024", n=2)
 
-    # List available models from API
-    from ai_infra.imagegen import list_available_models
-    models = list_available_models("google")
+    # List live models from the provider API
+    from ai_infra.imagegen import list_models
+    models = list_models("google")
     ```
 """
 
@@ -33,8 +34,10 @@ from ai_infra.imagegen.discovery import (
     get_api_key,
     is_provider_configured,
     list_all_available_models,
+    list_all_models,
     list_available_models,
     list_configured_providers,
+    list_known_models,
     list_models,
     list_providers,
 )
@@ -48,8 +51,10 @@ __all__ = [
     # Discovery
     "list_providers",
     "list_configured_providers",
+    "list_known_models",
     "list_models",
     "list_available_models",
+    "list_all_models",
     "list_all_available_models",
     "is_provider_configured",
     "get_api_key",

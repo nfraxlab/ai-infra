@@ -13,12 +13,25 @@ from ai_infra.llm.streaming import StreamConfig
 class DummyAgent(Agent):
     """Agent with a stubbed token stream for astream()."""
 
-    def __init__(self, token_stream: Iterable[tuple[Any, Any]]):
-        super().__init__()
+    def __init__(self, token_stream: Iterable[tuple[Any, Any]], **model_kwargs: Any):
+        super().__init__(**model_kwargs)
         self._token_stream = list(token_stream)
 
     async def astream_agent_tokens(self, *args, **kwargs):
         for token in self._token_stream:
+            yield token
+
+
+class RecordingDummyAgent(DummyAgent):
+    """Dummy agent that records forwarded kwargs for assertions."""
+
+    def __init__(self, token_stream: Iterable[tuple[Any, Any]], **model_kwargs: Any):
+        super().__init__(token_stream, **model_kwargs)
+        self.last_kwargs: dict[str, Any] | None = None
+
+    async def astream_agent_tokens(self, *args, **kwargs):
+        self.last_kwargs = kwargs
+        async for token in super().astream_agent_tokens(*args, **kwargs):
             yield token
 
 
@@ -322,3 +335,50 @@ Billing tool for agents..."""
         {"package": "fin-infra", "path": "payments.md"},
         {"package": "ai-infra", "path": "tools/billing.md"},
     ]
+
+
+@pytest.mark.asyncio
+async def test_astream_forwards_explicit_tool_controls_outside_model_kwargs():
+    final_chunk = AIMessageChunk(content="final")
+    agent = RecordingDummyAgent([(final_chunk, {})])
+
+    events = [
+        event
+        async for event in agent.astream(
+            "hello",
+            provider="openai",
+            tool_controls={"tool_choice": {"name": "calculator"}, "force_once": True},
+            temperature=0.1,
+        )
+    ]
+
+    assert [event.type for event in events] == [
+        "thinking",
+        "turn_start",
+        "token",
+        "turn_end",
+        "done",
+    ]
+    assert agent.last_kwargs is not None
+    assert agent.last_kwargs["tool_controls"] == {
+        "tool_choice": {"name": "calculator"},
+        "force_once": True,
+    }
+    assert agent.last_kwargs["model_kwargs"] == {"temperature": 0.1}
+
+
+@pytest.mark.asyncio
+async def test_astream_hoists_default_tool_controls_out_of_model_kwargs():
+    final_chunk = AIMessageChunk(content="final")
+    agent = RecordingDummyAgent(
+        [(final_chunk, {})],
+        tool_controls={"tool_choice": {"name": "search_docs"}},
+        temperature=0.1,
+    )
+
+    events = [event async for event in agent.astream("hello", provider="openai")]
+
+    assert events[-1].type == "done"
+    assert agent.last_kwargs is not None
+    assert agent.last_kwargs["tool_controls"] == {"tool_choice": {"name": "search_docs"}}
+    assert agent.last_kwargs["model_kwargs"] == {"temperature": 0.1}

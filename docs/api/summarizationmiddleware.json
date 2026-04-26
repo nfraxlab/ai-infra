@@ -1,0 +1,197 @@
+{
+  "name": "SummarizationMiddleware",
+  "module": "ai_infra.llm.memory",
+  "docstring": "Middleware that auto-summarizes when conversation gets too long.\n\nAttach to an Agent to automatically compress conversation history\nwhen it approaches context limits.\n\nExample:\n    ```python\n    from ai_infra import Agent\n    from ai_infra.memory import SummarizationMiddleware\n\n    agent = Agent(\n        tools=[...],\n        middleware=[\n            SummarizationMiddleware(\n                trigger_tokens=4000,  # Summarize when over 4000 tokens\n                keep_messages=10,     # Always keep last 10 messages\n            )\n        ]\n    )\n    ```\n\nAttributes:\n    trigger_tokens: Summarize when token count exceeds this threshold\n    trigger_messages: Summarize when message count exceeds this threshold\n    keep_messages: Number of recent messages to always keep\n    llm: LLM to use for summarization (uses default if None)\n    summarize_prompt: Custom prompt template",
+  "parameters": [
+    {
+      "name": "trigger_tokens",
+      "type": "int | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "trigger_messages",
+      "type": "int | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "keep_messages",
+      "type": "int",
+      "default": "10",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "llm",
+      "type": "Any | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "summarize_prompt",
+      "type": "str | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "_last_summary",
+      "type": "str | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    }
+  ],
+  "methods": [
+    {
+      "name": "__init__",
+      "signature": "(trigger_tokens: int | None = None, trigger_messages: int | None = None, keep_messages: int = 10, llm: Any | None = None, summarize_prompt: str | None = None, _last_summary: str | None = None) -> None",
+      "docstring": null,
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "trigger_tokens",
+          "type": "int | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "trigger_messages",
+          "type": "int | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "keep_messages",
+          "type": "int",
+          "default": "10",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "llm",
+          "type": "Any | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "summarize_prompt",
+          "type": "str | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "_last_summary",
+          "type": "str | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        }
+      ],
+      "returns": "None",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "aprocess",
+      "signature": "(messages: list[BaseMessage]) -> list[BaseMessage]",
+      "docstring": "Async version of process.\n\nArgs:\n    messages: Current message history\n\nReturns:\n    Potentially summarized message history",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "messages",
+          "type": "list[BaseMessage]",
+          "default": null,
+          "description": "Current message history",
+          "required": true
+        }
+      ],
+      "returns": "list[BaseMessage]",
+      "is_async": true,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "process",
+      "signature": "(messages: list[BaseMessage]) -> list[BaseMessage]",
+      "docstring": "Process messages, summarizing if needed.\n\nArgs:\n    messages: Current message history\n\nReturns:\n    Potentially summarized message history",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "messages",
+          "type": "list[BaseMessage]",
+          "default": null,
+          "description": "Current message history",
+          "required": true
+        }
+      ],
+      "returns": "list[BaseMessage]",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "should_summarize",
+      "signature": "(messages: Sequence[BaseMessage]) -> bool",
+      "docstring": "Check if messages should be summarized.\n\nArgs:\n    messages: Current message history\n\nReturns:\n    True if summarization should be triggered",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "messages",
+          "type": "Sequence[BaseMessage]",
+          "default": null,
+          "description": "Current message history",
+          "required": true
+        }
+      ],
+      "returns": "bool",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    }
+  ],
+  "bases": [],
+  "source_file": "src/ai_infra/llm/memory/summarize.py",
+  "source_line": 298
+}

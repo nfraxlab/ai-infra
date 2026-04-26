@@ -880,6 +880,7 @@ class Agent(BaseLLM):
         stream_mode: str | list[str] = "messages",
         config: dict[str, Any] | None = None,
         stream_config: StreamConfig | None = None,
+        tool_controls: ToolCallControls | dict[str, Any] | None = None,
         **model_kwargs,
     ):
         """Stream agent responses as normalized, typed events.
@@ -912,6 +913,7 @@ class Agent(BaseLLM):
                 - Any other LangGraph config options
 
             stream_config: Advanced streaming configuration (StreamConfig)
+            tool_controls: Tool calling controls (tool_choice, parallel_tool_calls, force_once)
             **model_kwargs: Passed through to LLM (temperature, max_tokens, etc.)
 
         Yields:
@@ -970,6 +972,8 @@ class Agent(BaseLLM):
 
         # Merge model kwargs
         eff_kwargs = {**self._default_model_kwargs, **model_kwargs}
+        legacy_tool_controls = eff_kwargs.pop("tool_controls", None)
+        eff_tool_controls = tool_controls if tool_controls is not None else legacy_tool_controls
 
         # Resolve effective system prompt: per-call kwarg takes precedence over constructor default.
         # System is passed to create_react_agent as a state modifier (prompt=) so it is applied
@@ -1026,6 +1030,7 @@ class Agent(BaseLLM):
             model_name=eff_model,
             tools=tools,
             model_kwargs=eff_kwargs,
+            tool_controls=eff_tool_controls,
             config=config,
             system=eff_system,
         ):

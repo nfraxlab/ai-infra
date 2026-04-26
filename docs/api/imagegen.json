@@ -1,7 +1,7 @@
 {
   "name": "ImageGen",
   "module": "ai_infra.imagegen",
-  "docstring": "Provider-agnostic image generation.\n\nSupports OpenAI (DALL-E), Google (Imagen), Stability AI, and Replicate.\nAuto-detects provider from environment variables if not specified.\n\nExample:\n    ```python\n    # Zero-config: auto-detects from env vars\n    gen = ImageGen()\n    images = gen.generate(\"A sunset over mountains\")\n\n    # Explicit provider and model\n    gen = ImageGen(provider=\"google\", model=\"imagen-4.0-generate-001\")\n    images = gen.generate(\"A futuristic city\", n=2)\n\n    # Save generated image\n    images[0].save(\"output.png\")\n    ```\n\nEnvironment Variables:\n    - OPENAI_API_KEY: For OpenAI DALL-E\n    - GOOGLE_API_KEY or GEMINI_API_KEY: For Google Imagen\n    - STABILITY_API_KEY: For Stability AI\n    - REPLICATE_API_TOKEN: For Replicate",
+  "docstring": "Provider-agnostic image generation.\n\nSupports OpenAI, Google, xAI, Stability AI, and Replicate.\nAuto-detects provider from environment variables if not specified.\n\nExample:\n    ```python\n    # Zero-config: auto-detects from env vars\n    gen = ImageGen()\n    images = gen.generate(\"A sunset over mountains\")\n\n    # Explicit provider and model\n    gen = ImageGen(provider=\"google\", model=\"imagen-4.0-generate-001\")\n    images = gen.generate(\"A futuristic city\", n=2)\n\n    # Save generated image\n    images[0].save(\"output.png\")\n    ```\n\nEnvironment Variables:\n    - OPENAI_API_KEY: For OpenAI GPT Image / DALL-E\n    - GOOGLE_API_KEY or GEMINI_API_KEY: For Google Gemini / Imagen\n    - XAI_API_KEY: For xAI Grok Imagine\n    - STABILITY_API_KEY: For Stability AI\n    - REPLICATE_API_TOKEN: For Replicate",
   "parameters": [
     {
       "name": "provider",
@@ -83,7 +83,7 @@
     },
     {
       "name": "agenerate",
-      "signature": "(prompt: str, size: str = '1024x1024', n: int = 1, quality: Literal['standard', 'hd'] = 'standard', style: Literal['vivid', 'natural'] | None = None, kwargs: Any = {}) -> list[GeneratedImage]",
+      "signature": "(prompt: str, size: str = '1024x1024', n: int = 1, quality: Literal['standard', 'hd', 'low', 'medium', 'high', 'auto'] = 'standard', style: Literal['vivid', 'natural'] | None = None, kwargs: Any = {}) -> list[GeneratedImage]",
       "docstring": "Async version of generate().\n\nArgs:\n    prompt: Text description of the image to generate.\n    size: Image size (e.g., \"1024x1024\", \"1792x1024\").\n    n: Number of images to generate.\n    quality: Image quality (\"standard\" or \"hd\"). OpenAI only.\n    style: Image style (\"vivid\" or \"natural\"). OpenAI DALL-E 3 only.\n    **kwargs: Additional provider-specific options.\n\nReturns:\n    List of GeneratedImage objects.",
       "parameters": [
         {
@@ -116,7 +116,7 @@
         },
         {
           "name": "quality",
-          "type": "Literal['standard', 'hd']",
+          "type": "Literal['standard', 'hd', 'low', 'medium', 'high', 'auto']",
           "default": "'standard'",
           "description": "Image quality (\"standard\" or \"hd\"). OpenAI only.",
           "required": false
@@ -146,7 +146,7 @@
     {
       "name": "edit",
       "signature": "(image: str | bytes, prompt: str, mask: str | bytes | None = None, size: str = '1024x1024', n: int = 1, kwargs: Any = {}) -> list[GeneratedImage]",
-      "docstring": "Edit an existing image based on a prompt.\n\nNote: Currently only supported by OpenAI (DALL-E 2).\n\nArgs:\n    image: Path to image file or image bytes.\n    prompt: Description of the edit to make.\n    mask: Optional mask image (transparent areas will be edited).\n    size: Output image size.\n    n: Number of variations to generate.\n    **kwargs: Additional options.\n\nReturns:\n    List of GeneratedImage objects.",
+      "docstring": "Edit an existing image based on a prompt.\n\nNote: Supported by OpenAI image-edit models.\n\nArgs:\n    image: Path to image file or image bytes.\n    prompt: Description of the edit to make.\n    mask: Optional mask image (transparent areas will be edited).\n    size: Output image size.\n    n: Number of variations to generate.\n    **kwargs: Additional options.\n\nReturns:\n    List of GeneratedImage objects.",
       "parameters": [
         {
           "name": "self",
@@ -207,7 +207,7 @@
     },
     {
       "name": "generate",
-      "signature": "(prompt: str, size: str = '1024x1024', n: int = 1, quality: Literal['standard', 'hd'] = 'standard', style: Literal['vivid', 'natural'] | None = None, kwargs: Any = {}) -> list[GeneratedImage]",
+      "signature": "(prompt: str, size: str = '1024x1024', n: int = 1, quality: Literal['standard', 'hd', 'low', 'medium', 'high', 'auto'] = 'standard', style: Literal['vivid', 'natural'] | None = None, kwargs: Any = {}) -> list[GeneratedImage]",
       "docstring": "Generate images from a text prompt.\n\nArgs:\n    prompt: Text description of the image to generate.\n    size: Image size (e.g., \"1024x1024\", \"1792x1024\").\n    n: Number of images to generate.\n    quality: Image quality (\"standard\" or \"hd\"). OpenAI only.\n    style: Image style (\"vivid\" or \"natural\"). OpenAI DALL-E 3 only.\n    **kwargs: Additional provider-specific options.\n\nReturns:\n    List of GeneratedImage objects.\n\nExample:\n    ```python\n    images = gen.generate(\n        \"A cat wearing a hat\",\n        size=\"1024x1024\",\n        n=2,\n        quality=\"hd\",\n    )\n    for img in images:\n        print(img.url)\n    ```",
       "parameters": [
         {
@@ -240,7 +240,7 @@
         },
         {
           "name": "quality",
-          "type": "Literal['standard', 'hd']",
+          "type": "Literal['standard', 'hd', 'low', 'medium', 'high', 'auto']",
           "default": "'standard'",
           "description": "Image quality (\"standard\" or \"hd\"). OpenAI only.",
           "required": false
@@ -350,5 +350,5 @@
   ],
   "bases": [],
   "source_file": "src/ai_infra/imagegen/imagegen.py",
-  "source_line": 22
+  "source_line": 315
 }

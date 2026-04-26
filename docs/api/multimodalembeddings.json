@@ -1,0 +1,231 @@
+{
+  "name": "MultimodalEmbeddings",
+  "module": "ai_infra.embeddings",
+  "docstring": "Provider-agnostic embeddings for mixed text and image inputs.\n\nGenerates a single embedding vector from an ordered sequence of text\nstrings and/or images. Supports interleaved content (e.g. caption +\nimage + follow-up text) where the provider supports it.\n\nSupported providers:\n    - voyage: Voyage AI voyage-multimodal-3.5 (single-backbone, best RAG)\n    - cohere: Cohere embed-v4.0 (128K context, multilingual)\n    - google_vertexai: Google multimodalembedding@001 (Vertex AI)\n    - amazon: Amazon Titan image embeddings (AWS Bedrock)\n\nRequires at least one of: VOYAGE_API_KEY, COHERE_API_KEY,\nGOOGLE_APPLICATION_CREDENTIALS, or AWS_ACCESS_KEY_ID.\n\nExample:\n    ```python\n    from pathlib import Path\n    from ai_infra import MultimodalEmbeddings\n\n    emb = MultimodalEmbeddings()  # auto-detects provider\n\n    # Embed a single image\n    vector = emb.embed([Path(\"photo.jpg\")])\n\n    # Embed image + caption together\n    vector = emb.embed([Path(\"photo.jpg\"), \"a picture of a mountain\"])\n\n    # Batch embedding\n    vectors = emb.embed_batch([\n        [Path(\"img1.jpg\"), \"caption one\"],\n        [Path(\"img2.png\"), \"caption two\"],\n    ])\n\n    # Async\n    vector = await emb.aembed([Path(\"photo.jpg\")])\n    ```\n\nProviders:\n    - voyage / voyage_ai: Voyage AI (VOYAGE_API_KEY)\n    - cohere: Cohere (COHERE_API_KEY)\n    - google / google_vertexai / vertexai: Google Vertex AI\n      (GOOGLE_APPLICATION_CREDENTIALS or GOOGLE_CLOUD_PROJECT)\n    - amazon / bedrock / aws: Amazon Bedrock (AWS_ACCESS_KEY_ID)",
+  "parameters": [
+    {
+      "name": "provider",
+      "type": "str | None",
+      "default": "None",
+      "description": "Provider name. Auto-detects from environment if not given.",
+      "required": false
+    },
+    {
+      "name": "model",
+      "type": "str | None",
+      "default": "None",
+      "description": "Model name. Uses provider default if not specified.",
+      "required": false
+    },
+    {
+      "name": "kwargs",
+      "type": "Any",
+      "default": "{}",
+      "description": null,
+      "required": false
+    }
+  ],
+  "methods": [
+    {
+      "name": "__init__",
+      "signature": "(provider: str | None = None, model: str | None = None, kwargs: Any = {}) -> None",
+      "docstring": "Initialize multimodal embeddings.\n\nArgs:\n    provider: Provider name. Auto-detects from environment if not given.\n    model: Model name. Uses provider default if not specified.\n    **kwargs: Additional provider-specific options passed through.\n\nRaises:\n    ValueError: If no provider is available or an unknown provider is\n        specified.\n\nExample:\n    ```python\n    # Auto-detect\n    emb = MultimodalEmbeddings()\n\n    # Explicit provider and model\n    emb = MultimodalEmbeddings(\n        provider=\"voyage\",\n        model=\"voyage-multimodal-3.5\",\n    )\n    ```",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "provider",
+          "type": "str | None",
+          "default": "None",
+          "description": "Provider name. Auto-detects from environment if not given.",
+          "required": false
+        },
+        {
+          "name": "model",
+          "type": "str | None",
+          "default": "None",
+          "description": "Model name. Uses provider default if not specified.",
+          "required": false
+        },
+        {
+          "name": "kwargs",
+          "type": "Any",
+          "default": "{}",
+          "description": null,
+          "required": false
+        }
+      ],
+      "returns": "None",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": [
+        {
+          "type": "ValueError",
+          "description": "If no provider is available or an unknown provider is specified."
+        },
+        {
+          "type": "ValueError",
+          "description": "If no provider is available or an unknown provider is specified."
+        }
+      ]
+    },
+    {
+      "name": "aembed",
+      "signature": "(inputs: MultimodalInput) -> list[float]",
+      "docstring": "Async embed a sequence of text strings and/or images.\n\nArgs:\n    inputs: Ordered sequence of str (text) and bytes/Path (image).\n\nReturns:\n    Embedding vector as a list of floats.",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "inputs",
+          "type": "MultimodalInput",
+          "default": null,
+          "description": "Ordered sequence of str (text) and bytes/Path (image).",
+          "required": true
+        }
+      ],
+      "returns": "list[float]",
+      "is_async": true,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "aembed_batch",
+      "signature": "(batch: list[MultimodalInput]) -> list[list[float]]",
+      "docstring": "Async embed a batch of multimodal input sequences.\n\nRuns the synchronous embed_batch in a thread pool to avoid blocking\nthe event loop.\n\nArgs:\n    batch: List of input sequences; each sequence becomes one vector.\n\nReturns:\n    List of embedding vectors, one per input sequence.",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "batch",
+          "type": "list[MultimodalInput]",
+          "default": null,
+          "description": "List of input sequences; each sequence becomes one vector.",
+          "required": true
+        }
+      ],
+      "returns": "list[list[float]]",
+      "is_async": true,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "embed",
+      "signature": "(inputs: MultimodalInput) -> list[float]",
+      "docstring": "Embed a sequence of text strings and/or images into one vector.\n\nArgs:\n    inputs: Ordered sequence of str (text) and bytes/Path (image).\n\nReturns:\n    Embedding vector as a list of floats.\n\nExample:\n    ```python\n    from pathlib import Path\n    vector = emb.embed([Path(\"image.jpg\"), \"a sunset photo\"])\n    ```",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "inputs",
+          "type": "MultimodalInput",
+          "default": null,
+          "description": "Ordered sequence of str (text) and bytes/Path (image).",
+          "required": true
+        }
+      ],
+      "returns": "list[float]",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "embed_batch",
+      "signature": "(batch: list[MultimodalInput]) -> list[list[float]]",
+      "docstring": "Embed a batch of multimodal input sequences.\n\nArgs:\n    batch: List of input sequences; each sequence becomes one vector.\n\nReturns:\n    List of embedding vectors, one per input sequence.\n\nExample:\n    ```python\n    vectors = emb.embed_batch([\n        [Path(\"cat.jpg\"), \"a cat\"],\n        [Path(\"dog.jpg\"), \"a dog\"],\n    ])\n    ```",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "batch",
+          "type": "list[MultimodalInput]",
+          "default": null,
+          "description": "List of input sequences; each sequence becomes one vector.",
+          "required": true
+        }
+      ],
+      "returns": "list[list[float]]",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_configured_providers",
+      "signature": "() -> list[str]",
+      "docstring": "List multimodal embedding providers with credentials configured.\n\nReturns:\n    List of provider names that have their required env var set.",
+      "parameters": [
+        {
+          "name": "cls",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        }
+      ],
+      "returns": "list[str]",
+      "is_async": false,
+      "is_classmethod": true,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_providers",
+      "signature": "() -> list[str]",
+      "docstring": "List all supported multimodal embedding providers.\n\nReturns:\n    List of provider names.",
+      "parameters": [
+        {
+          "name": "cls",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        }
+      ],
+      "returns": "list[str]",
+      "is_async": false,
+      "is_classmethod": true,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    }
+  ],
+  "bases": [],
+  "source_file": "src/ai_infra/embeddings/multimodal.py",
+  "source_line": 76
+}

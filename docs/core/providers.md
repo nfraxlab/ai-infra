@@ -50,7 +50,7 @@ if is_provider_configured("openai"):
 | OpenAI | `openai` | `OPENAI_API_KEY` | Chat, Embeddings, TTS, STT, ImageGen, Realtime |
 | Anthropic | `anthropic` | `ANTHROPIC_API_KEY` | Chat |
 | Google | `google_genai` | `GEMINI_API_KEY` | Chat, Embeddings, TTS, STT, ImageGen, Realtime |
-| xAI | `xai` | `XAI_API_KEY` | Chat |
+| xAI | `xai` | `XAI_API_KEY` | Chat, ImageGen |
 | ElevenLabs | `elevenlabs` | `ELEVENLABS_API_KEY` | TTS |
 | Deepgram | `deepgram` | `DEEPGRAM_API_KEY` | STT |
 | Stability | `stability` | `STABILITY_API_KEY` | ImageGen |
