@@ -33,8 +33,9 @@ from __future__ import annotations
 
 import logging
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from ai_infra.providers import ProviderCapability, ProviderRegistry
 
@@ -333,12 +334,20 @@ def _fetch_replicate_models() -> list[str]:
     return list_known_models("replicate")
 
 
-_FETCHERS = {
+_LIVE_FETCHERS: dict[str, Callable[[], list[str]]] = {
     "openai": _fetch_openai_models,
     "google": _fetch_google_models,
+    "replicate": _fetch_replicate_models,
+}
+
+
+class _TimeoutFetcher(Protocol):
+    def __call__(self, *, timeout: float | None = None) -> list[str]: ...
+
+
+_TIMEOUT_FETCHERS: dict[str, _TimeoutFetcher] = {
     "xai": _fetch_xai_models,
     "stability": _fetch_stability_models,
-    "replicate": _fetch_replicate_models,
 }
 
 
@@ -395,35 +404,36 @@ def list_available_models(
         cache = _load_cache()
         if _is_cache_valid(cache, provider):
             log.debug(f"Using cached models for {provider}")
-            models = cache.get(provider, {}).get("models")
-            if isinstance(models, list) and all(isinstance(m, str) for m in models):
-                return models
+            cached_models = cache.get(provider, {}).get("models")
+            if isinstance(cached_models, list) and all(isinstance(m, str) for m in cached_models):
+                return cached_models
 
     # Fetch from API
     log.info(f"Fetching image models from {provider}...")
-    fetcher = _FETCHERS.get(provider)
-    if not fetcher:
-        return list_known_models(provider)  # Fall back to known catalog
-
+    fetched_models: list[str]
     try:
-        if provider in {"xai", "stability"}:
-            models = fetcher(timeout=timeout)
+        if provider in _TIMEOUT_FETCHERS:
+            timeout_fetcher = _TIMEOUT_FETCHERS[provider]
+            fetched_models = timeout_fetcher(timeout=timeout)
         else:
-            models = fetcher()
+            live_fetcher = _LIVE_FETCHERS.get(provider)
+            if not live_fetcher:
+                return list_known_models(provider)  # Fall back to known catalog
+            fetched_models = live_fetcher()
     except Exception as e:
         log.warning(f"Failed to fetch models from {provider}: {e}")
         return list_known_models(provider)  # Fall back to known catalog
 
     # Update cache
-    if use_cache and models:
+    if use_cache and fetched_models:
         cache = _load_cache()
         cache[provider] = {
-            "models": models,
+            "models": fetched_models,
             "timestamp": time.time(),
         }
         _save_cache(cache)
 
-    return models
+    return fetched_models
 
 
 def list_all_available_models(

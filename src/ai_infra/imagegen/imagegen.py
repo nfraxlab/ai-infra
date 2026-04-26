@@ -8,6 +8,7 @@ import binascii
 import io
 import math
 import time
+from importlib import import_module
 from typing import Any, BinaryIO, Literal
 
 from ai_infra.imagegen.models import (
@@ -283,6 +284,21 @@ def _build_google_image_part(image: str | bytes) -> Any:
             "mime_type": mime_type,
         }
     }
+
+
+def _load_xai_sdk_attr(attr_name: str) -> Any:
+    """Load an attribute from the optional xAI SDK only when it is needed."""
+    try:
+        module = import_module("xai_sdk")
+    except ImportError as exc:
+        raise ImportError(
+            "xai-sdk is required for xAI image generation. Install ai-infra[xai]."
+        ) from exc
+
+    try:
+        return getattr(module, attr_name)
+    except AttributeError as exc:
+        raise ImportError(f"xai-sdk does not provide '{attr_name}'") from exc
 
 
 def _is_retryable_openai_image_error(exc: Exception) -> bool:
@@ -1025,13 +1041,7 @@ class ImageGen:
     def _get_xai_client(self) -> Any:
         """Get or create xAI SDK client."""
         if self._client is None:
-            try:
-                from xai_sdk import Client
-            except ImportError as exc:
-                raise ImportError(
-                    "xai-sdk is required for xAI image generation. Install ai-infra[xai]."
-                ) from exc
-
+            Client = _load_xai_sdk_attr("Client")
             self._client = Client(api_key=self._api_key)
         return self._client
 
@@ -1120,13 +1130,7 @@ class ImageGen:
         **kwargs: Any,
     ) -> list[GeneratedImage]:
         """Async generate images using xAI Grok Imagine."""
-        try:
-            from xai_sdk import AsyncClient
-        except ImportError as exc:
-            raise ImportError(
-                "xai-sdk is required for xAI image generation. Install ai-infra[xai]."
-            ) from exc
-
+        AsyncClient = _load_xai_sdk_attr("AsyncClient")
         client = AsyncClient(api_key=self._api_key)
         params = self._build_xai_request_params(size, **kwargs)
 

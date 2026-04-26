@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import time
+from collections.abc import Callable
 from enum import Enum
 from pathlib import Path
 from typing import Any, cast
@@ -509,11 +510,10 @@ def _list_xai_models(*, timeout: float | None = None) -> list[str]:
 
 
 # Fetcher dispatch - returns ALL models (use filter_models_by_capability for specific types)
-_FETCHERS = {
+_MODEL_FETCHERS: dict[str, Callable[[], list[str]]] = {
     "openai": _list_openai_models,
     "anthropic": _list_anthropic_models,
     "google_genai": _list_google_models,
-    "xai": _list_xai_models,
 }
 
 # Convenience fetchers for chat models specifically
@@ -630,40 +630,40 @@ def list_models(
         if _is_cache_valid(cache, provider):
             log.debug(f"Using cached models for {provider}")
             cached = cache.get(provider, {}).get("models")
-            models: list[str]
+            cached_models: list[str]
             if isinstance(cached, list) and all(isinstance(m, str) for m in cached):
-                models = cached
+                cached_models = cached
             else:
-                models = []
+                cached_models = []
             if capability:
-                return filter_models_by_capability(models, provider, capability)
-            return models
+                return filter_models_by_capability(cached_models, provider, capability)
+            return cached_models
 
     # Fetch from API
     log.info(f"Fetching models from {provider}...")
-    fetcher = _FETCHERS.get(provider)
-    if not fetcher:
-        return []
-
+    fetched_models: list[str]
     if provider == "xai":
-        models = fetcher(timeout=timeout)
+        fetched_models = _list_xai_models(timeout=timeout)
     else:
-        models = fetcher()
+        fetcher = _MODEL_FETCHERS.get(provider)
+        if not fetcher:
+            return []
+        fetched_models = fetcher()
 
     # Update cache
-    if use_cache and models:
+    if use_cache and fetched_models:
         cache = _load_cache()
         cache[provider] = {
-            "models": models,
+            "models": fetched_models,
             "timestamp": time.time(),
         }
         _save_cache(cache)
 
     # Filter by capability if specified
     if capability:
-        return filter_models_by_capability(models, provider, capability)
+        return filter_models_by_capability(fetched_models, provider, capability)
 
-    return models
+    return fetched_models
 
 
 def list_all_models(

@@ -268,9 +268,56 @@
       "raises": null
     },
     {
-      "name": "list_models",
-      "signature": "(provider: str) -> list[str]",
-      "docstring": "List available models for a provider.\n\nArgs:\n    provider: Provider name.\n\nReturns:\n    List of model names.",
+      "name": "is_provider_configured",
+      "signature": "(provider: str) -> bool",
+      "docstring": "Check whether an image generation provider is configured.",
+      "parameters": [
+        {
+          "name": "provider",
+          "type": "str",
+          "default": null,
+          "description": null,
+          "required": true
+        }
+      ],
+      "returns": "bool",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": true,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_all_models",
+      "signature": "(refresh: bool = False, timeout: float | None = None) -> dict[str, list[str]]",
+      "docstring": "List live models for all configured image generation providers.\n\nArgs:\n    refresh: Force refresh from API, bypassing cache.\n    timeout: Optional request timeout in seconds for HTTP-based fetchers.\n\nReturns:\n    Dict mapping provider names to lists of live model IDs.",
+      "parameters": [
+        {
+          "name": "refresh",
+          "type": "bool",
+          "default": "False",
+          "description": "Force refresh from API, bypassing cache.",
+          "required": false
+        },
+        {
+          "name": "timeout",
+          "type": "float | None",
+          "default": "None",
+          "description": "Optional request timeout in seconds for HTTP-based fetchers.",
+          "required": false
+        }
+      ],
+      "returns": "dict[str, list[str]]",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": true,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_available_models",
+      "signature": "(provider: str, refresh: bool = False, timeout: float | None = None) -> list[str]",
+      "docstring": "List live models for a provider by querying the provider API.\n\nThis explicit alias is kept for backwards compatibility.\n\nArgs:\n    provider: Provider name.\n    refresh: Force refresh from API, bypassing cache.\n    timeout: Optional request timeout in seconds for HTTP-based fetchers.\n\nReturns:\n    List of live model IDs available from the provider.",
       "parameters": [
         {
           "name": "provider",
@@ -278,6 +325,86 @@
           "default": null,
           "description": "Provider name.",
           "required": true
+        },
+        {
+          "name": "refresh",
+          "type": "bool",
+          "default": "False",
+          "description": "Force refresh from API, bypassing cache.",
+          "required": false
+        },
+        {
+          "name": "timeout",
+          "type": "float | None",
+          "default": "None",
+          "description": "Optional request timeout in seconds for HTTP-based fetchers.",
+          "required": false
+        }
+      ],
+      "returns": "list[str]",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": true,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_configured_providers",
+      "signature": "() -> list[str]",
+      "docstring": "List configured image generation providers.",
+      "parameters": [],
+      "returns": "list[str]",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": true,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_known_models",
+      "signature": "(provider: str) -> list[str]",
+      "docstring": "List the built-in fallback model catalog for a provider.\n\nArgs:\n    provider: Provider name.\n\nReturns:\n    List of statically known model names.",
+      "parameters": [
+        {
+          "name": "provider",
+          "type": "str",
+          "default": null,
+          "description": "Provider name.",
+          "required": true
+        }
+      ],
+      "returns": "list[str]",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": true,
+      "is_property": false,
+      "raises": null
+    },
+    {
+      "name": "list_models",
+      "signature": "(provider: str, refresh: bool = False, timeout: float | None = None) -> list[str]",
+      "docstring": "List live models for a provider by querying the provider API.\n\nArgs:\n    provider: Provider name.\n    refresh: Force refresh from API, bypassing cache.\n    timeout: Optional request timeout in seconds for HTTP-based fetchers.\n\nReturns:\n    List of live model IDs available from the provider.",
+      "parameters": [
+        {
+          "name": "provider",
+          "type": "str",
+          "default": null,
+          "description": "Provider name.",
+          "required": true
+        },
+        {
+          "name": "refresh",
+          "type": "bool",
+          "default": "False",
+          "description": "Force refresh from API, bypassing cache.",
+          "required": false
+        },
+        {
+          "name": "timeout",
+          "type": "float | None",
+          "default": "None",
+          "description": "Optional request timeout in seconds for HTTP-based fetchers.",
+          "required": false
         }
       ],
       "returns": "list[str]",
@@ -350,5 +477,5 @@
   ],
   "bases": [],
   "source_file": "src/ai_infra/imagegen/imagegen.py",
-  "source_line": 315
+  "source_line": 336
 }
