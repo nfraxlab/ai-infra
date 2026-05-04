@@ -67,6 +67,17 @@ Conversation History RAG:
 # Primary API (6.5)
 from ai_infra.llm.memory.context import ContextResult, afit_context, fit_context
 
+# Durable memory record packing (generic SDK primitives)
+from ai_infra.llm.memory.records import (
+    MemoryContextPack,
+    MemoryContextPolicy,
+    MemoryKind,
+    MemoryRecord,
+    MemorySource,
+    pack_memory_context,
+    rank_memory_records,
+)
+
 # Long-term memory store (6.4.2)
 from ai_infra.llm.memory.store import MemoryItem, MemoryStore
 
@@ -95,6 +106,13 @@ __all__ = [
     "fit_context",
     "afit_context",
     "ContextResult",
+    "MemoryRecord",
+    "MemoryKind",
+    "MemorySource",
+    "MemoryContextPolicy",
+    "MemoryContextPack",
+    "rank_memory_records",
+    "pack_memory_context",
     # Token utilities (for advanced use)
     "count_tokens",
     "count_tokens_approximate",

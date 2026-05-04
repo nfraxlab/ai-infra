@@ -91,12 +91,17 @@ from ai_infra.llm.auth import atemporary_api_key, temporary_api_key
 # Phase 6.5 - Unified Context Management
 from ai_infra.llm.memory import (
     ContextResult,
+    MemoryContextPack,
+    MemoryContextPolicy,
     MemoryItem,
+    MemoryRecord,
     MemoryStore,
     SummarizationMiddleware,
     count_tokens,
     count_tokens_approximate,
     fit_context,
+    pack_memory_context,
+    rank_memory_records,
 )
 from ai_infra.llm.personas import Persona
 from ai_infra.llm.providers import Providers
@@ -287,6 +292,11 @@ __all__ = [
     "count_tokens_approximate",
     "MemoryStore",
     "MemoryItem",
+    "MemoryRecord",
+    "MemoryContextPolicy",
+    "MemoryContextPack",
+    "rank_memory_records",
+    "pack_memory_context",
     "SummarizationMiddleware",
     # Phase 6.8 - Streaming
     "StreamEvent",
