@@ -72,7 +72,7 @@ class MemoryRecord(BaseModel):
     def as_context_text(self, *, include_metadata: bool = True) -> str:
         """Render the memory as compact Markdown-like context."""
         parts = [f"### {self.title}", self.body]
-        labels = [self.kind, self.source]
+        labels: list[str] = [self.kind, self.source]
         if self.tags:
             labels.append("tags=" + ",".join(self.tags))
         if include_metadata and self.metadata:
