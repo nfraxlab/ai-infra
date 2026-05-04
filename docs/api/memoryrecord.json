@@ -1,0 +1,40 @@
+{
+  "name": "MemoryRecord",
+  "module": "ai_infra.llm.memory",
+  "docstring": "Portable representation of a durable memory item.\n\nThe model is intentionally storage-neutral. Database IDs, workspace IDs,\nproject IDs, conversation IDs, or application-specific fields should be\ncarried in ``metadata`` rather than becoming SDK concepts.",
+  "parameters": [],
+  "methods": [
+    {
+      "name": "as_context_text",
+      "signature": "(include_metadata: bool = True) -> str",
+      "docstring": "Render the memory as compact Markdown-like context.",
+      "parameters": [
+        {
+          "name": "self",
+          "type": null,
+          "default": null,
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "include_metadata",
+          "type": "bool",
+          "default": "True",
+          "description": null,
+          "required": false
+        }
+      ],
+      "returns": "str",
+      "is_async": false,
+      "is_classmethod": false,
+      "is_staticmethod": false,
+      "is_property": false,
+      "raises": null
+    }
+  ],
+  "bases": [
+    "BaseModel"
+  ],
+  "source_file": "src/ai_infra/llm/memory/records.py",
+  "source_line": 22
+}
