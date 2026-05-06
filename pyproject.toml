@@ -62,6 +62,7 @@ google-genai = { version = ">=1.0.0", optional = true }
 
 # DeepAgents - autonomous agent orchestration (0.2.x adds backends module)
 deepagents = ">=0.2.0"
+defusedxml = ">=0.7.1"
 
 # GitHub Copilot SDK - computer automation runtime (optional)
 github-copilot-sdk = { version = ">=0.1.0", optional = true }
@@ -82,6 +83,7 @@ openpyxl = { version = ">=3.1.0", optional = true }
 # Optional voice chat dependencies (microphone + playback)
 sounddevice = { version = ">=0.4.0", optional = true }
 soundfile = { version = ">=0.12.0", optional = true }
+tavily-python = { version = ">=0.7.0", optional = true }
 [tool.poetry.extras]
 # LLM providers (optional - install based on which API key you have)
 anthropic = ["langchain-anthropic"]
@@ -114,6 +116,8 @@ retriever-all = ["pgvector", "psycopg2-binary", "chromadb", "pypdf", "python-doc
 retriever-local = ["langchain-huggingface", "sentence-transformers", "pypdf", "python-docx", "beautifulsoup4", "pandas", "openpyxl"]
 # GitHub Copilot computer automation runtime
 copilot = ["github-copilot-sdk"]
+# Web search providers
+web-search = ["tavily-python"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.0"
@@ -124,6 +128,7 @@ ruff = ">=0.5.0"
 mypy = ">=1.10.0"
 pre-commit = ">=3.0.0"
 types-PyYAML = "*"
+types-defusedxml = "*"
 bandit = ">=1.7.0"
 python-semantic-release = ">=9.0.0"
 # Documentation
