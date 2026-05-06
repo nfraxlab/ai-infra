@@ -6391,6 +6391,24 @@ mpmath = ">=1.1.0,<1.4"
 dev = ["hypothesis (>=6.70.0)", "pytest (>=7.1.0)"]
 
 [[package]]
+name = "tavily-python"
+version = "0.7.24"
+description = "Python wrapper for the Tavily API"
+optional = true
+python-versions = ">=3.8"
+groups = ["main"]
+markers = "extra == \"web-search\""
+files = [
+    {file = "tavily_python-0.7.24-py3-none-any.whl", hash = "sha256:1a750108de42c4b0b46e4c1b7b64aeaf7fad7d7bac9167927edce0081fe166c9"},
+    {file = "tavily_python-0.7.24.tar.gz", hash = "sha256:6c8954193c6472231e813fe50cbd07806bd86c7228957675eb45875a44d58296"},
+]
+
+[package.dependencies]
+httpx = "*"
+requests = "*"
+tiktoken = ">=0.5.1"
+
+[[package]]
 name = "tenacity"
 version = "9.1.2"
 description = "Retry code until it succeeds"
@@ -7687,9 +7705,10 @@ retriever-all = ["openpyxl", "pypdfium2", "pytesseract"]
 retriever-local = ["langchain-huggingface", "openpyxl", "sentence-transformers"]
 sqlite = []
 voice = ["sounddevice", "soundfile"]
+web-search = ["tavily-python"]
 xai = ["langchain-xai", "xai-sdk"]
 
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<4.0"
-content-hash = "51de427f8b4c114a51bdd296ad4a491ead6e3c7e65cd36a748d21849d797822c"
+content-hash = "300e91af7e324d5c3df411fc56f4f8dad32cf4a0e88400d0a159a95686e82361"
