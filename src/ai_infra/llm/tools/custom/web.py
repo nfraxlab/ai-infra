@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import importlib
 import os
 import re
 from typing import Any
@@ -65,27 +66,42 @@ def _truncate(text: str, max_chars: int) -> str:
     return stripped[:max_chars].rstrip() + "\n...[truncated]"
 
 
-async def _fetch_url_impl(url: str, max_chars: int = 12_000) -> str:
-    from svc_infra.loaders import URLLoader
+async def _load_public_url_content(url: str, *, extract_text: bool) -> Any | None:
+    loaders_module = importlib.import_module("svc_infra.loaders")
+    timeout = _float_env("AI_INFRA_WEB_FETCH_TIMEOUT_SECONDS", 10.0)
+    max_bytes = _int_env("AI_INFRA_WEB_FETCH_MAX_BYTES", 1_048_576)
 
-    loader = URLLoader(
+    fetch_public_url = getattr(loaders_module, "fetch_public_url", None)
+    if callable(fetch_public_url):
+        return await fetch_public_url(
+            url,
+            extract_text=extract_text,
+            timeout=timeout,
+            max_bytes=max_bytes,
+        )
+
+    loader_factory = loaders_module.URLLoader
+    loader = loader_factory(
         url,
-        extract_text=True,
-        public_only=True,
-        timeout=_float_env("AI_INFRA_WEB_FETCH_TIMEOUT_SECONDS", 10.0),
-        max_bytes=_int_env("AI_INFRA_WEB_FETCH_MAX_BYTES", 1_048_576),
+        extract_text=extract_text,
+        timeout=timeout,
         on_error="raise",
     )
+    contents = await loader.load()
+    if not contents:
+        return None
+    return contents[0]
 
+
+async def _fetch_url_impl(url: str, max_chars: int = 12_000) -> str:
     try:
-        contents = await loader.load()
+        content = await _load_public_url_content(url, extract_text=True)
     except Exception as exc:
         return f"Unable to fetch URL: {exc}"
 
-    if not contents:
+    if content is None:
         return "Unable to fetch URL: no content was returned."
 
-    content = contents[0]
     excerpt = _truncate(content.content, max_chars=max_chars)
     final_url = str(content.metadata.get("final_url", url))
     content_type = content.content_type or "unknown"
@@ -154,28 +170,18 @@ def _parse_google_news_rss_items(xml_text: str) -> list[dict[str, str]]:
 
 
 async def _search_with_google_news_rss(query: str, limit: int) -> str:
-    from svc_infra.loaders import URLLoader
-
     feed_url = f"https://news.google.com/rss/search?q={quote_plus(query)}&hl=en-US&gl=US&ceid=US:en"
 
     try:
-        loader = URLLoader(
-            feed_url,
-            extract_text=False,
-            public_only=True,
-            timeout=_float_env("AI_INFRA_WEB_FETCH_TIMEOUT_SECONDS", 10.0),
-            max_bytes=_int_env("AI_INFRA_WEB_FETCH_MAX_BYTES", 1_048_576),
-            on_error="raise",
-        )
-        contents = await loader.load()
+        content = await _load_public_url_content(feed_url, extract_text=False)
     except Exception as exc:
         return f"Web search failed: {exc}"
 
-    if not contents:
+    if content is None:
         return "Web search failed: no RSS content was returned."
 
     try:
-        results = _parse_google_news_rss_items(contents[0].content)
+        results = _parse_google_news_rss_items(content.content)
     except ElementTree.ParseError as exc:
         return f"Web search failed: invalid RSS response ({exc})."
 
@@ -188,14 +194,18 @@ async def _search_with_tavily(query: str, limit: int) -> str:
         return "Web search is not configured in this environment."
 
     try:
-        from tavily import TavilyClient
+        tavily_module = importlib.import_module("tavily")
     except ImportError:
         return (
             "Web search provider 'tavily' requires the optional dependency "
             "tavily-python. Install ai-infra[web-search]."
         )
 
-    client = TavilyClient(api_key=api_key)
+    tavily_client_factory = getattr(tavily_module, "TavilyClient", None)
+    if tavily_client_factory is None:
+        return "Web search failed: tavily provider is missing TavilyClient."
+
+    client = tavily_client_factory(api_key=api_key)
     try:
         response = await asyncio.to_thread(
             client.search,

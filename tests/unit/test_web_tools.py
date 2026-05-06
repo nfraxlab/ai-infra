@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from importlib import import_module
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
@@ -21,8 +22,35 @@ class TestFetchURLTool:
         assert fetch_url is not None
 
     @pytest.mark.asyncio
-    async def test_fetch_url_invokes_public_loader(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_fetch_url_uses_public_fetch_helper(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from ai_infra.llm.tools.custom.web import fetch_url
+
+        fetch_public_url = AsyncMock(
+            return_value=SimpleNamespace(
+                content="Page body",
+                content_type="text/plain",
+                metadata={"final_url": "https://example.com/final"},
+            )
+        )
+        svc_loaders = import_module("svc_infra.loaders")
+        monkeypatch.setattr(svc_loaders, "fetch_public_url", fetch_public_url, raising=False)
+
+        result = await fetch_url.ainvoke({"url": "https://example.com/page", "max_chars": 1000})
+
+        fetch_public_url.assert_awaited_once()
+        assert "Requested URL: https://example.com/page" in result
+        assert "Final URL: https://example.com/final" in result
+        assert "Page body" in result
+
+    @pytest.mark.asyncio
+    async def test_fetch_url_falls_back_to_url_loader(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from ai_infra.llm.tools.custom.web import fetch_url
+
+        monkeypatch.delattr("svc_infra.loaders.fetch_public_url", raising=False)
 
         mock_loader = MagicMock()
         mock_loader.load = AsyncMock(
@@ -42,7 +70,7 @@ class TestFetchURLTool:
 
         loader_factory.assert_called_once()
         _, kwargs = loader_factory.call_args
-        assert kwargs["public_only"] is True
+        assert kwargs["extract_text"] is True
         assert kwargs["on_error"] == "raise"
         assert "Requested URL: https://example.com/page" in result
         assert "Final URL: https://example.com/final" in result
@@ -68,24 +96,22 @@ class TestSearchWebTool:
 
         monkeypatch.delenv("AI_INFRA_WEB_SEARCH_PROVIDER", raising=False)
         monkeypatch.delenv("TAVILY_API_KEY", raising=False)
-        mock_loader = MagicMock()
-        mock_loader.load = AsyncMock(
-            return_value=[
-                SimpleNamespace(
-                    content=(
-                        "<rss><channel>"
-                        "<item><title>Result One</title><link>https://example.com/1</link>"
-                        "<description><![CDATA[First <b>snippet</b>]]></description>"
-                        "<source url='https://publisher.example'>Example News</source>"
-                        "<pubDate>Mon, 05 May 2026 12:00:00 GMT</pubDate></item>"
-                        "<item><title>Result Two</title><link>https://example.com/2</link>"
-                        "<description>Second snippet</description></item>"
-                        "</channel></rss>"
-                    )
+        fetch_public_url = AsyncMock(
+            return_value=SimpleNamespace(
+                content=(
+                    "<rss><channel>"
+                    "<item><title>Result One</title><link>https://example.com/1</link>"
+                    "<description><![CDATA[First <b>snippet</b>]]></description>"
+                    "<source url='https://publisher.example'>Example News</source>"
+                    "<pubDate>Mon, 05 May 2026 12:00:00 GMT</pubDate></item>"
+                    "<item><title>Result Two</title><link>https://example.com/2</link>"
+                    "<description>Second snippet</description></item>"
+                    "</channel></rss>"
                 )
-            ]
+            )
         )
-        monkeypatch.setattr("svc_infra.loaders.URLLoader", MagicMock(return_value=mock_loader))
+        svc_loaders = import_module("svc_infra.loaders")
+        monkeypatch.setattr(svc_loaders, "fetch_public_url", fetch_public_url, raising=False)
 
         result = await search_web.ainvoke({"query": "latest AI news", "limit": 3})
 
@@ -140,14 +166,14 @@ class TestSearchWebTool:
         monkeypatch.setenv("AI_INFRA_WEB_SEARCH_PROVIDER", "tavily")
         monkeypatch.delitem(sys.modules, "tavily", raising=False)
 
-        real_import = __import__
+        real_import_module = __import__("importlib").import_module
 
-        def fake_import(name: str, *args: object, **kwargs: object):
+        def fake_import_module(name: str, package: str | None = None):
             if name == "tavily":
                 raise ImportError("missing tavily")
-            return real_import(name, *args, **kwargs)
+            return real_import_module(name, package)
 
-        monkeypatch.setattr("builtins.__import__", fake_import)
+        monkeypatch.setattr("importlib.import_module", fake_import_module)
 
         result = await search_web.ainvoke({"query": "latest AI news", "limit": 2})
 
@@ -161,9 +187,9 @@ class TestSearchWebTool:
 
         monkeypatch.setenv("AI_INFRA_WEB_SEARCH_PROVIDER", "google-news-rss")
         monkeypatch.delenv("TAVILY_API_KEY", raising=False)
-        mock_loader = MagicMock()
-        mock_loader.load = AsyncMock(return_value=[SimpleNamespace(content="not-xml")])
-        monkeypatch.setattr("svc_infra.loaders.URLLoader", MagicMock(return_value=mock_loader))
+        fetch_public_url = AsyncMock(return_value=SimpleNamespace(content="not-xml"))
+        svc_loaders = import_module("svc_infra.loaders")
+        monkeypatch.setattr(svc_loaders, "fetch_public_url", fetch_public_url, raising=False)
 
         result = await search_web.ainvoke({"query": "latest AI news", "limit": 2})
 
