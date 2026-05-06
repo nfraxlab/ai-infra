@@ -82,6 +82,7 @@ openpyxl = { version = ">=3.1.0", optional = true }
 # Optional voice chat dependencies (microphone + playback)
 sounddevice = { version = ">=0.4.0", optional = true }
 soundfile = { version = ">=0.12.0", optional = true }
+tavily-python = { version = ">=0.7.0", optional = true }
 [tool.poetry.extras]
 # LLM providers (optional - install based on which API key you have)
 anthropic = ["langchain-anthropic"]
@@ -114,6 +115,8 @@ retriever-all = ["pgvector", "psycopg2-binary", "chromadb", "pypdf", "python-doc
 retriever-local = ["langchain-huggingface", "sentence-transformers", "pypdf", "python-docx", "beautifulsoup4", "pandas", "openpyxl"]
 # GitHub Copilot computer automation runtime
 copilot = ["github-copilot-sdk"]
+# Web search providers
+web-search = ["tavily-python"]
 
 [tool.poetry.group.dev.dependencies]
 pytest = ">=8.0.0"

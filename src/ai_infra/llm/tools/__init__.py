@@ -22,6 +22,7 @@ from ai_infra.llm.tools.custom.multimodal import (
     generate_image,
     transcribe_audio,
 )
+from ai_infra.llm.tools.custom.web import fetch_url, search_web
 from ai_infra.llm.tools.events import ApprovalEvent, ApprovalEvents
 from ai_infra.llm.tools.hitl import (
     ApprovalConfig,
@@ -85,6 +86,8 @@ __all__ = [
     "transcribe_audio",
     "analyze_image",
     "generate_image",
+    "fetch_url",
+    "search_web",
     # Shell tools
     "run_shell",
     "create_shell_tool",
