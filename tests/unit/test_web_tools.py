@@ -9,6 +9,32 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+_MISSING = object()
+
+
+def _patch_svc_loaders_import(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    fetch_public_url: object = _MISSING,
+    url_loader: object = _MISSING,
+) -> None:
+    from ai_infra.llm.tools.custom import web
+
+    real_import_module = import_module
+    fake_module = SimpleNamespace()
+
+    if fetch_public_url is not _MISSING:
+        fake_module.fetch_public_url = fetch_public_url
+    if url_loader is not _MISSING:
+        fake_module.URLLoader = url_loader
+
+    def fake_import_module(name: str, package: str | None = None):
+        if name == "svc_infra.loaders":
+            return fake_module
+        return real_import_module(name, package)
+
+    monkeypatch.setattr(web.importlib, "import_module", fake_import_module)
+
 
 class TestFetchURLTool:
     def test_tool_has_correct_name(self) -> None:
@@ -34,8 +60,7 @@ class TestFetchURLTool:
                 metadata={"final_url": "https://example.com/final"},
             )
         )
-        svc_loaders = import_module("svc_infra.loaders")
-        monkeypatch.setattr(svc_loaders, "fetch_public_url", fetch_public_url, raising=False)
+        _patch_svc_loaders_import(monkeypatch, fetch_public_url=fetch_public_url)
 
         result = await fetch_url.ainvoke({"url": "https://example.com/page", "max_chars": 1000})
 
@@ -50,8 +75,6 @@ class TestFetchURLTool:
     ) -> None:
         from ai_infra.llm.tools.custom.web import fetch_url
 
-        monkeypatch.delattr("svc_infra.loaders.fetch_public_url", raising=False)
-
         mock_loader = MagicMock()
         mock_loader.load = AsyncMock(
             return_value=[
@@ -64,7 +87,7 @@ class TestFetchURLTool:
         )
 
         loader_factory = MagicMock(return_value=mock_loader)
-        monkeypatch.setattr("svc_infra.loaders.URLLoader", loader_factory)
+        _patch_svc_loaders_import(monkeypatch, url_loader=loader_factory)
 
         result = await fetch_url.ainvoke({"url": "https://example.com/page", "max_chars": 1000})
 
@@ -110,8 +133,7 @@ class TestSearchWebTool:
                 )
             )
         )
-        svc_loaders = import_module("svc_infra.loaders")
-        monkeypatch.setattr(svc_loaders, "fetch_public_url", fetch_public_url, raising=False)
+        _patch_svc_loaders_import(monkeypatch, fetch_public_url=fetch_public_url)
 
         result = await search_web.ainvoke({"query": "latest AI news", "limit": 3})
 
@@ -188,8 +210,7 @@ class TestSearchWebTool:
         monkeypatch.setenv("AI_INFRA_WEB_SEARCH_PROVIDER", "google-news-rss")
         monkeypatch.delenv("TAVILY_API_KEY", raising=False)
         fetch_public_url = AsyncMock(return_value=SimpleNamespace(content="not-xml"))
-        svc_loaders = import_module("svc_infra.loaders")
-        monkeypatch.setattr(svc_loaders, "fetch_public_url", fetch_public_url, raising=False)
+        _patch_svc_loaders_import(monkeypatch, fetch_public_url=fetch_public_url)
 
         result = await search_web.ainvoke({"query": "latest AI news", "limit": 2})
 
