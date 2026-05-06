@@ -13,8 +13,8 @@ import os
 import re
 from typing import Any
 from urllib.parse import quote_plus
-from xml.etree import ElementTree
 
+from defusedxml import ElementTree
 from langchain_core.tools import StructuredTool
 from pydantic import BaseModel, Field
 

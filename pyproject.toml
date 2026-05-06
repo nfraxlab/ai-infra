@@ -62,6 +62,7 @@ google-genai = { version = ">=1.0.0", optional = true }
 
 # DeepAgents - autonomous agent orchestration (0.2.x adds backends module)
 deepagents = ">=0.2.0"
+defusedxml = ">=0.7.1"
 
 # GitHub Copilot SDK - computer automation runtime (optional)
 github-copilot-sdk = { version = ">=0.1.0", optional = true }
