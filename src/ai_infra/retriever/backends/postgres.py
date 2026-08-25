@@ -15,6 +15,8 @@ from ai_infra.retriever.backends.base import BaseBackend, validate_sql_identifie
 if TYPE_CHECKING:
     import psycopg2
 
+_IVFFLAT_LISTS = 100
+
 
 class PostgresBackend(BaseBackend):
     """PostgreSQL vector storage using pgvector extension.
@@ -143,7 +145,7 @@ class PostgresBackend(BaseBackend):
                 CREATE INDEX IF NOT EXISTS {self._table_name}_embedding_idx
                 ON {self._table_name}
                 USING ivfflat (embedding vector_cosine_ops)
-                WITH (lists = 100)
+                WITH (lists = {_IVFFLAT_LISTS})
             """
             )
 
@@ -242,6 +244,10 @@ class PostgresBackend(BaseBackend):
 
         results: list[dict[str, Any]] = []
         with self._conn.cursor() as cur:
+            cur.execute(
+                "SELECT set_config('ivfflat.probes', %s, true)",
+                (str(_IVFFLAT_LISTS),),
+            )
             cur.execute(query, params)
             rows = cur.fetchall()
 

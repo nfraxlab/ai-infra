@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from dataclasses import dataclass
+from typing import Any, cast
 
+from langchain.agents import create_agent
+from langchain.agents.middleware import AgentMiddleware, ModelRequest
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain_core.tools import tool as lc_tool
-from langgraph.prebuilt import create_react_agent
 from langgraph.runtime import Runtime
 
 from ai_infra.llm.tools.tool_controls import ToolCallControls, normalize_tool_controls
@@ -15,6 +17,16 @@ from .model_registry import ModelRegistry
 from .settings import ModelSettings
 
 _logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class _ModelBinding:
+    """Resolved model and tool settings for one agent model call."""
+
+    model: Any
+    tools: list[Any]
+    tool_choice: Any
+    model_settings: dict[str, Any]
 
 
 def tool_used(state: Any) -> bool:
@@ -30,17 +42,14 @@ def tool_used(state: Any) -> bool:
     return False
 
 
-def bind_model_with_tools(
+def _resolve_model_binding(
     state: Any,
     runtime: Runtime[ModelSettings],
     registry: ModelRegistry,
     *,
     global_tools: list[Any] | None = None,
-) -> Any:
-    """Select (or lazily init) the model and bind tools according to controls.
-
-    This mirrors the prior LLM._select_model method but is factored out for reuse.
-    """
+) -> _ModelBinding:
+    """Resolve the model and provider-specific tool settings for one call."""
     ctx = runtime.context
     key_model_kwargs = ctx.extra.get("model_kwargs", {}) if ctx.extra else {}
     model = registry.get_or_create(ctx.provider, ctx.model_name, **key_model_kwargs)
@@ -59,12 +68,62 @@ def bind_model_with_tools(
     if force_once and tool_used(state):
         tool_choice = None
 
-    # Gemini doesn't support parallel_tool_calls parameter
-    bind_kwargs: dict[str, Any] = {"tool_choice": tool_choice}
-    if ctx.provider != "google_genai":
-        bind_kwargs["parallel_tool_calls"] = parallel_tool_calls
+    model_settings: dict[str, Any] = {}
+    if ctx.provider != "google_genai" and tools:
+        model_settings["parallel_tool_calls"] = parallel_tool_calls
 
-    return model.bind_tools(tools, **bind_kwargs)
+    return _ModelBinding(
+        model=model,
+        tools=tools,
+        tool_choice=tool_choice,
+        model_settings=model_settings,
+    )
+
+
+def bind_model_with_tools(
+    state: Any,
+    runtime: Runtime[ModelSettings],
+    registry: ModelRegistry,
+    *,
+    global_tools: list[Any] | None = None,
+) -> Any:
+    """Select (or lazily init) the model and bind tools according to controls."""
+    binding = _resolve_model_binding(state, runtime, registry, global_tools=global_tools)
+
+    return binding.model.bind_tools(
+        binding.tools,
+        tool_choice=binding.tool_choice,
+        **binding.model_settings,
+    )
+
+
+class _RuntimeModelBindingMiddleware(AgentMiddleware):
+    """Apply nfrax runtime model selection to LangChain agent requests."""
+
+    def __init__(self, registry: ModelRegistry, global_tools: list[Any]) -> None:
+        self._registry = registry
+        self._global_tools = global_tools
+
+    def _prepare_request(self, request: ModelRequest) -> ModelRequest:
+        binding = _resolve_model_binding(
+            request.state,
+            cast(Runtime[ModelSettings], request.runtime),
+            self._registry,
+            global_tools=self._global_tools,
+        )
+
+        return request.override(
+            model=binding.model,
+            tools=binding.tools,
+            tool_choice=binding.tool_choice,
+            model_settings={**request.model_settings, **binding.model_settings},
+        )
+
+    def wrap_model_call(self, request: ModelRequest, handler: Any) -> Any:
+        return handler(self._prepare_request(request))
+
+    async def awrap_model_call(self, request: ModelRequest, handler: Any) -> Any:
+        return await handler(self._prepare_request(request))
 
 
 def make_agent_with_context(
@@ -89,8 +148,11 @@ def make_agent_with_context(
     recursion_limit: int = 50,
     # System prompt (applied as a state modifier, not stored in session state)
     system: str | None = None,
+    middleware: list[Any] | None = None,
+    response_format: Any | None = None,
+    context_schema: type[Any] | None = None,
 ) -> tuple[Any, ModelSettings]:
-    """Construct an agent (LangGraph ReAct) and its runtime context.
+    """Construct an agent and its runtime context.
 
     Handles:
       - model warm-up via registry
@@ -127,7 +189,7 @@ def make_agent_with_context(
     """
     model_kwargs = model_kwargs or {}
     effective_model = registry.resolve_model_name(provider, model_name)
-    registry.get_or_create(provider, effective_model, **model_kwargs)
+    initial_model = registry.get_or_create(provider, effective_model, **model_kwargs)
     if tool_controls is not None:
         from dataclasses import asdict, is_dataclass
 
@@ -181,22 +243,22 @@ def make_agent_with_context(
         extra=merged_extra,
     )
 
-    def _selector(state, rt: Runtime[ModelSettings]):
-        return bind_model_with_tools(state, rt, registry, global_tools=context.tools)
-
-    # Build agent with optional session/interrupt config.
-    # system is passed as `prompt` (a state modifier) so it is injected before
-    # every model call but NOT persisted in the checkpointer state.  This
-    # prevents duplicate system messages when the same thread_id is reused
-    # across multiple astream() / run() calls.
-    agent = create_react_agent(
-        model=_selector,
+    # The adapter preserves dynamic registry selection and provider-specific
+    # tool controls while create_agent supplies the modern graph runtime.
+    agent = create_agent(
+        model=initial_model,
         tools=effective_tools,
+        middleware=(
+            _RuntimeModelBindingMiddleware(registry, context.tools or []),
+            *(middleware or []),
+        ),
+        response_format=response_format,
+        context_schema=context_schema,
         checkpointer=checkpointer,
         store=store,
         interrupt_before=interrupt_before,
         interrupt_after=interrupt_after,
-        prompt=system,
+        system_prompt=system,
     )
     return agent, context
 

@@ -347,6 +347,17 @@ class TestPostgresBackendSearch:
         assert results[0]["score"] == 0.95
         assert results[0]["metadata"] == {"source": "test"}
 
+    def test_search_probes_all_configured_ivfflat_lists(self, backend):
+        """Sparse IVFFlat partitions cannot make a non-empty store appear empty."""
+        _mock_cursor.fetchall.return_value = []
+
+        backend.search(query_embedding=[0.1, 0.2, 0.3])
+
+        assert any(
+            call.args == ("SELECT set_config('ivfflat.probes', %s, true)", ("100",))
+            for call in _mock_cursor.execute.call_args_list
+        )
+
     def test_search_with_filter(self, backend):
         """Test search with metadata filter."""
         _mock_cursor.fetchall.return_value = [

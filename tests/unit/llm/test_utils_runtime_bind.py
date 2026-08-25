@@ -15,11 +15,15 @@ import logging
 from unittest.mock import MagicMock, Mock, patch
 
 import pytest
+from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+from langchain_core.messages import AIMessage
 from langchain_core.tools import BaseTool
 
+from ai_infra.llm.agent import Agent
 from ai_infra.llm.utils.model_registry import ModelRegistry
 from ai_infra.llm.utils.runtime_bind import (
     _normalize_tool,
+    _RuntimeModelBindingMiddleware,
     bind_model_with_tools,
     make_agent_with_context,
     tool_used,
@@ -191,6 +195,25 @@ class TestBindModelWithTools:
         call_kwargs = mock_model.bind_tools.call_args[1]
         assert call_kwargs.get("tool_choice") is None
 
+    def test_openai_omits_parallel_tool_calls_without_tools(self):
+        """Tool-only settings are not sent to OpenAI when no tools are bound."""
+        mock_model = MagicMock()
+        mock_model.bind_tools.return_value = mock_model
+        mock_registry = MagicMock(spec=ModelRegistry)
+        mock_registry.get_or_create.return_value = mock_model
+        mock_runtime = MagicMock()
+        mock_runtime.context = ModelSettings(
+            provider="openai",
+            model_name="gpt-4o",
+            tools=[],
+            extra={},
+        )
+
+        bind_model_with_tools({"messages": []}, mock_runtime, mock_registry)
+
+        call_kwargs = mock_model.bind_tools.call_args[1]
+        assert "parallel_tool_calls" not in call_kwargs
+
     def test_force_once_clears_tool_choice_after_use(self):
         """Test force_once clears tool_choice after tool is used."""
         mock_model = MagicMock()
@@ -356,13 +379,125 @@ class TestNormalizeTool:
 class TestMakeAgentWithContext:
     """Test make_agent_with_context function."""
 
+    def test_agent_invokes_with_runtime_selected_model(self):
+        """Test the modern factory invokes the model selected from runtime context."""
+        model = FakeMessagesListChatModel(responses=[AIMessage(content="runtime response")])
+        mock_registry = MagicMock(spec=ModelRegistry)
+        mock_registry.resolve_model_name.return_value = "fake-model"
+        mock_registry.get_or_create.return_value = model
+
+        agent, context = make_agent_with_context(
+            mock_registry,
+            provider="test",
+            model_name="fake-model",
+            tools=[],
+        )
+
+        result = agent.invoke(
+            {"messages": [{"role": "user", "content": "Hello"}]},
+            context=context,
+        )
+
+        assert result["messages"][-1].content == "runtime response"
+        assert mock_registry.get_or_create.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_agent_ainvokes_with_runtime_selected_model(self):
+        """Test async invocation uses the same runtime model selection path."""
+        model = FakeMessagesListChatModel(responses=[AIMessage(content="async runtime response")])
+        mock_registry = MagicMock(spec=ModelRegistry)
+        mock_registry.resolve_model_name.return_value = "fake-model"
+        mock_registry.get_or_create.return_value = model
+
+        agent, context = make_agent_with_context(
+            mock_registry,
+            provider="test",
+            model_name="fake-model",
+            tools=[],
+        )
+
+        result = await agent.ainvoke(
+            {"messages": [{"role": "user", "content": "Hello"}]},
+            context=context,
+        )
+
+        assert result["messages"][-1].content == "async runtime response"
+        assert mock_registry.get_or_create.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_agent_token_stream_unwraps_v2_messages_parts(self):
+        """The normalized stream consumes typed LangGraph v2 message parts."""
+        model = FakeMessagesListChatModel(responses=[AIMessage(content="typed stream response")])
+        mock_registry = MagicMock(spec=ModelRegistry)
+        mock_registry.resolve_model_name.return_value = "fake-model"
+        mock_registry.get_or_create.return_value = model
+        compiled_agent, context = make_agent_with_context(
+            mock_registry,
+            provider="test",
+            model_name="fake-model",
+            tools=[],
+        )
+        agent = Agent()
+
+        with patch.object(
+            agent,
+            "_make_agent_with_context",
+            return_value=(compiled_agent, context),
+        ):
+            chunks = [
+                chunk
+                async for chunk in agent.astream_agent_tokens(
+                    messages=[{"role": "user", "content": "Hello"}],
+                    provider="test",
+                    model_name="fake-model",
+                    tools=[],
+                )
+            ]
+
+        assert chunks[0][0].content == "typed stream response"
+        assert chunks[0][1]["langgraph_node"] == "model"
+
+    def test_runtime_binding_middleware_preserves_tool_controls(self):
+        """Test modern agent requests use the existing nfrax binding policy."""
+        mock_registry = MagicMock(spec=ModelRegistry)
+        selected_model = MagicMock()
+        mock_registry.get_or_create.return_value = selected_model
+        test_tool = MagicMock(spec=BaseTool)
+
+        runtime = MagicMock()
+        runtime.context = ModelSettings(
+            provider="openai",
+            model_name="gpt-4o",
+            tools=[test_tool],
+            extra={"tool_controls": {"tool_choice": "required", "parallel_tool_calls": True}},
+        )
+        request = MagicMock(
+            state={"messages": []},
+            runtime=runtime,
+            model_settings={"temperature": 0.2},
+        )
+        prepared_request = MagicMock()
+        request.override.return_value = prepared_request
+        handler = MagicMock(return_value=MagicMock())
+
+        middleware = _RuntimeModelBindingMiddleware(mock_registry, [test_tool])
+        middleware.wrap_model_call(request, handler)
+
+        request.override.assert_called_once_with(
+            model=selected_model,
+            tools=[test_tool],
+            tool_choice="required",
+            model_settings={"temperature": 0.2, "parallel_tool_calls": True},
+        )
+        handler.assert_called_once_with(prepared_request)
+
     def test_basic_agent_creation(self):
         """Test basic agent creation."""
         mock_registry = MagicMock(spec=ModelRegistry)
         mock_registry.resolve_model_name.return_value = "gpt-4o"
         mock_registry.get_or_create.return_value = MagicMock()
 
-        with patch("ai_infra.llm.utils.runtime_bind.create_react_agent") as mock_create:
+        with patch("ai_infra.llm.utils.runtime_bind.create_agent") as mock_create:
             mock_create.return_value = MagicMock()
 
             agent, context = make_agent_with_context(
@@ -387,7 +522,7 @@ class TestMakeAgentWithContext:
         mock_registry.resolve_model_name.return_value = "gpt-4o"
         mock_registry.get_or_create.return_value = MagicMock()
 
-        with patch("ai_infra.llm.utils.runtime_bind.create_react_agent") as mock_create:
+        with patch("ai_infra.llm.utils.runtime_bind.create_agent") as mock_create:
             mock_create.return_value = MagicMock()
 
             agent, context = make_agent_with_context(
@@ -411,7 +546,7 @@ class TestMakeAgentWithContext:
         mock_registry.resolve_model_name.return_value = "gpt-4o"
         mock_registry.get_or_create.return_value = MagicMock()
 
-        with patch("ai_infra.llm.utils.runtime_bind.create_react_agent") as mock_create:
+        with patch("ai_infra.llm.utils.runtime_bind.create_agent") as mock_create:
             mock_create.return_value = MagicMock()
 
             agent, context = make_agent_with_context(
@@ -454,7 +589,7 @@ class TestMakeAgentWithContext:
         mock_registry.resolve_model_name.return_value = "gpt-4o"
         mock_registry.get_or_create.return_value = MagicMock()
 
-        with patch("ai_infra.llm.utils.runtime_bind.create_react_agent") as mock_create:
+        with patch("ai_infra.llm.utils.runtime_bind.create_agent") as mock_create:
             mock_create.return_value = MagicMock()
 
             # Should not raise when tools are explicitly provided
@@ -474,7 +609,7 @@ class TestMakeAgentWithContext:
         mock_registry.resolve_model_name.return_value = "gpt-4o"
         mock_registry.get_or_create.return_value = MagicMock()
 
-        with patch("ai_infra.llm.utils.runtime_bind.create_react_agent") as mock_create:
+        with patch("ai_infra.llm.utils.runtime_bind.create_agent") as mock_create:
             mock_create.return_value = MagicMock()
 
             agent, context = make_agent_with_context(
@@ -492,7 +627,7 @@ class TestMakeAgentWithContext:
         mock_registry.resolve_model_name.return_value = "gpt-4o"
         mock_registry.get_or_create.return_value = MagicMock()
 
-        with patch("ai_infra.llm.utils.runtime_bind.create_react_agent") as mock_create:
+        with patch("ai_infra.llm.utils.runtime_bind.create_agent") as mock_create:
             mock_create.return_value = MagicMock()
 
             agent, context = make_agent_with_context(
@@ -521,7 +656,7 @@ class TestMakeAgentWithContext:
         mock_registry.resolve_model_name.return_value = "gpt-4o"
         mock_registry.get_or_create.return_value = MagicMock()
 
-        with patch("ai_infra.llm.utils.runtime_bind.create_react_agent") as mock_create:
+        with patch("ai_infra.llm.utils.runtime_bind.create_agent") as mock_create:
             mock_create.return_value = MagicMock()
 
             agent, context = make_agent_with_context(
@@ -536,14 +671,14 @@ class TestMakeAgentWithContext:
         assert len(wrapped_tools) == 1
 
     def test_checkpointer_passed_to_agent(self):
-        """Test checkpointer is passed to create_react_agent."""
+        """Test checkpointer is passed to create_agent."""
         mock_registry = MagicMock(spec=ModelRegistry)
         mock_registry.resolve_model_name.return_value = "gpt-4o"
         mock_registry.get_or_create.return_value = MagicMock()
 
         mock_checkpointer = MagicMock()
 
-        with patch("ai_infra.llm.utils.runtime_bind.create_react_agent") as mock_create:
+        with patch("ai_infra.llm.utils.runtime_bind.create_agent") as mock_create:
             mock_create.return_value = MagicMock()
 
             agent, context = make_agent_with_context(
@@ -563,7 +698,7 @@ class TestMakeAgentWithContext:
         mock_registry.resolve_model_name.return_value = "gpt-4o"
         mock_registry.get_or_create.return_value = MagicMock()
 
-        with patch("ai_infra.llm.utils.runtime_bind.create_react_agent") as mock_create:
+        with patch("ai_infra.llm.utils.runtime_bind.create_agent") as mock_create:
             mock_create.return_value = MagicMock()
 
             agent, context = make_agent_with_context(
@@ -577,6 +712,34 @@ class TestMakeAgentWithContext:
         call_kwargs = mock_create.call_args[1]
         assert call_kwargs["interrupt_before"] == ["dangerous_tool"]
         assert call_kwargs["interrupt_after"] == ["log_tool"]
+
+    def test_modern_agent_options_are_forwarded(self):
+        """Test standard agents forward modern factory configuration."""
+        mock_registry = MagicMock(spec=ModelRegistry)
+        mock_registry.resolve_model_name.return_value = "gpt-4o"
+        mock_registry.get_or_create.return_value = MagicMock()
+        custom_middleware = MagicMock()
+        response_format = MagicMock()
+
+        class RuntimeContext:
+            pass
+
+        with patch("ai_infra.llm.utils.runtime_bind.create_agent") as mock_create:
+            mock_create.return_value = MagicMock()
+
+            make_agent_with_context(
+                mock_registry,
+                provider="openai",
+                model_name="gpt-4o",
+                middleware=[custom_middleware],
+                response_format=response_format,
+                context_schema=RuntimeContext,
+            )
+
+        call_kwargs = mock_create.call_args[1]
+        assert call_kwargs["middleware"][1:] == (custom_middleware,)
+        assert call_kwargs["response_format"] is response_format
+        assert call_kwargs["context_schema"] is RuntimeContext
 
 
 # =============================================================================
@@ -605,7 +768,7 @@ class TestRuntimeBindEdgeCases:
         mock_registry.resolve_model_name.return_value = "gpt-4o"
         mock_registry.get_or_create.return_value = MagicMock()
 
-        with patch("ai_infra.llm.utils.runtime_bind.create_react_agent") as mock_create:
+        with patch("ai_infra.llm.utils.runtime_bind.create_agent") as mock_create:
             mock_create.return_value = MagicMock()
 
             with caplog.at_level(logging.WARNING):
@@ -633,7 +796,7 @@ class TestRuntimeBindEdgeCases:
         mock_registry.resolve_model_name.return_value = "gpt-4o"
         mock_registry.get_or_create.return_value = MagicMock()
 
-        with patch("ai_infra.llm.utils.runtime_bind.create_react_agent") as mock_create:
+        with patch("ai_infra.llm.utils.runtime_bind.create_agent") as mock_create:
             mock_create.return_value = MagicMock()
 
             agent, context = make_agent_with_context(

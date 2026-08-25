@@ -14,14 +14,14 @@
     },
     "core/agents.md": {
       "created": "2025-12-01",
-      "lastUpdated": "2025-12-07",
-      "updateCount": 4,
+      "lastUpdated": "2026-08-24",
+      "updateCount": 6,
       "title": "Agent Class"
     },
     "core/graph.md": {
       "created": "2025-12-01",
-      "lastUpdated": "2025-12-01",
-      "updateCount": 1,
+      "lastUpdated": "2026-08-24",
+      "updateCount": 2,
       "title": "Graph Class"
     },
     "core/llm.md": {

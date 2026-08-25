@@ -390,7 +390,7 @@ class TestBuildDeepAgentSessionConfig:
 
     @patch("deepagents.create_deep_agent")
     def test_session_config_pause_before(self, mock_create):
-        """Test pause_before is converted to interrupt_on."""
+        """Test pause_before is converted to the approval interrupt configuration."""
         mock_create.return_value = MagicMock()
         mock_model = MagicMock()
         mock_session = MagicMock()
@@ -406,15 +406,13 @@ class TestBuildDeepAgentSessionConfig:
             call_kwargs = mock_create.call_args.kwargs
             interrupt_on = call_kwargs.get("interrupt_on")
             assert interrupt_on is not None
-            assert interrupt_on.get("tool1") == {"before": True}
-            assert interrupt_on.get("tool2") == {"before": True}
+            assert interrupt_on.get("tool1") is True
+            assert interrupt_on.get("tool2") is True
         except ImportError:
             pytest.skip("deepagents package not installed")
 
-    @patch("deepagents.create_deep_agent")
-    def test_session_config_pause_after(self, mock_create):
-        """Test pause_after is converted to interrupt_on."""
-        mock_create.return_value = MagicMock()
+    def test_session_config_pause_after_is_rejected(self):
+        """Test pause_after fails because DeepAgents lacks an equivalent interrupt."""
         mock_model = MagicMock()
         mock_session = MagicMock()
         mock_session.storage.get_checkpointer.return_value = None
@@ -424,19 +422,11 @@ class TestBuildDeepAgentSessionConfig:
 
         from ai_infra.llm.agents.deep import build_deep_agent
 
-        try:
+        with pytest.raises(ValueError, match="pause_after is not supported"):
             build_deep_agent(mock_model, session_config=mock_session)
-            call_kwargs = mock_create.call_args.kwargs
-            interrupt_on = call_kwargs.get("interrupt_on")
-            assert interrupt_on is not None
-            assert interrupt_on.get("tool1") == {"after": True}
-        except ImportError:
-            pytest.skip("deepagents package not installed")
 
-    @patch("deepagents.create_deep_agent")
-    def test_session_config_pause_before_and_after(self, mock_create):
-        """Test tool with both pause_before and pause_after."""
-        mock_create.return_value = MagicMock()
+    def test_session_config_pause_before_and_after_is_rejected(self):
+        """Test pause_after is rejected even when pause_before is configured."""
         mock_model = MagicMock()
         mock_session = MagicMock()
         mock_session.storage.get_checkpointer.return_value = None
@@ -446,14 +436,8 @@ class TestBuildDeepAgentSessionConfig:
 
         from ai_infra.llm.agents.deep import build_deep_agent
 
-        try:
+        with pytest.raises(ValueError, match="pause_after is not supported"):
             build_deep_agent(mock_model, session_config=mock_session)
-            call_kwargs = mock_create.call_args.kwargs
-            interrupt_on = call_kwargs.get("interrupt_on")
-            assert interrupt_on is not None
-            assert interrupt_on.get("tool1") == {"before": True, "after": True}
-        except ImportError:
-            pytest.skip("deepagents package not installed")
 
     @patch("deepagents.create_deep_agent")
     def test_no_session_config_means_none_values(self, mock_create):
@@ -535,7 +519,7 @@ class TestBuildDeepAgentAllParams:
             assert call_kwargs.get("context_schema") is ContextSchema
             assert call_kwargs.get("checkpointer") is mock_checkpointer
             assert call_kwargs.get("store") is mock_store
-            assert call_kwargs.get("interrupt_on") == {"tool1": {"before": True}}
+            assert call_kwargs.get("interrupt_on") == {"tool1": True}
         except ImportError:
             pytest.skip("deepagents package not installed")
 

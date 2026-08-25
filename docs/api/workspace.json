@@ -75,7 +75,7 @@
     },
     {
       "name": "get_deepagent_backend",
-      "signature": "() -> BaseBackend",
+      "signature": "() -> BackendProtocol",
       "docstring": "Get the deepagents backend for this workspace.\n\nReturns:\n    Configured backend for use with create_deep_agent().\n\nSecurity Note:\n    The sandboxing is enforced by deepagents' FilesystemBackend.\n    For \"sandboxed\" mode, paths are validated to stay within root_dir.\n    For \"full\" mode, the agent has full filesystem access from root.\n\n    [!] If using \"full\" mode, the agent can access ANY file the process\n    can access. Only use with trusted inputs in controlled environments.",
       "parameters": [
         {
@@ -86,7 +86,7 @@
           "required": false
         }
       ],
-      "returns": "BaseBackend",
+      "returns": "BackendProtocol",
       "is_async": false,
       "is_classmethod": false,
       "is_staticmethod": false,

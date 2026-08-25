@@ -3,7 +3,7 @@
 import pytest
 from typing_extensions import TypedDict
 
-from ai_infra.graph import Graph
+from ai_infra.graph import Graph, RetryPolicy, TimeoutPolicy
 from ai_infra.graph.models import ConditionalEdge, Edge
 
 # ============================================================================
@@ -276,6 +276,86 @@ class TestLangGraphPower:
         # Should have invoke method
         assert hasattr(graph.graph, "invoke")
         assert hasattr(graph.graph, "ainvoke")
+
+
+class TestGraphResiliencePolicies:
+    """Tests for LangGraph-native resilience policy forwarding."""
+
+    @pytest.mark.asyncio
+    async def test_per_node_retry_policy_retries_failed_node(self):
+        """A per-node RetryPolicy is forwarded to LangGraph execution."""
+        attempts = 0
+
+        async def flaky_node(state: dict) -> dict:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise ValueError("retry me")
+            return {"attempts": attempts}
+
+        timeout = TimeoutPolicy(run_timeout=1)
+        graph = Graph(
+            nodes={"flaky": flaky_node},
+            edges=[],
+            node_policies={
+                "flaky": {
+                    "retry_policy": RetryPolicy(
+                        initial_interval=0,
+                        jitter=False,
+                        max_attempts=2,
+                        retry_on=ValueError,
+                    ),
+                    "timeout": timeout,
+                }
+            },
+        )
+
+        assert (await graph.arun({}))["attempts"] == 2
+        assert attempts == 2
+        assert graph._node_policies["flaky"]["timeout"] is timeout
+
+    def test_node_defaults_apply_to_all_nodes(self):
+        """A graph-wide RetryPolicy is applied when a node has no override."""
+        attempts = 0
+
+        def flaky_node(state: dict) -> dict:
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RuntimeError("retry me")
+            return {"attempts": attempts}
+
+        graph = Graph(
+            nodes={"flaky": flaky_node},
+            edges=[],
+            node_defaults={
+                "retry_policy": RetryPolicy(
+                    initial_interval=0,
+                    jitter=False,
+                    max_attempts=2,
+                    retry_on=RuntimeError,
+                )
+            },
+        )
+
+        assert graph.run({})["attempts"] == 2
+        assert attempts == 2
+
+    def test_node_policies_reject_unknown_node_and_option(self):
+        """Invalid policies fail at graph construction rather than being ignored."""
+        with pytest.raises(ValueError, match="unknown nodes: missing"):
+            Graph(
+                nodes={"present": lambda state: state},
+                edges=[],
+                node_policies={"missing": {}},
+            )
+
+        with pytest.raises(ValueError, match="unsupported policy options: unsupported"):
+            Graph(
+                nodes={"present": lambda state: state},
+                edges=[],
+                node_defaults={"unsupported": True},
+            )
 
 
 # ============================================================================

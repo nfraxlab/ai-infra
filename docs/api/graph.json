@@ -1,7 +1,7 @@
 {
   "name": "Graph",
   "module": "ai_infra.graph",
-  "docstring": "Production-ready workflow graph with zero-config building.\n\nSupports multiple initialization patterns:\n\n1. Simple dict-based (GOAL: minimal boilerplate):\n   ```python\n   graph = Graph(\n       nodes={\n           \"analyze\": analyze_func,\n           \"decide\": decide_func,\n           \"execute\": execute_func,\n       },\n       edges=[\n           (\"analyze\", \"decide\"),\n           (\"decide\", \"execute\", lambda state: state[\"should_execute\"]),\n       ],\n       entry=\"analyze\",\n   )\n   ```\n\n2. Any callable as node:\n   ```python\n   graph = Graph(nodes={\n       \"func\": my_function,\n       \"lambda\": lambda state: {\"output\": state[\"input\"] * 2},\n       \"method\": my_instance.method,\n       \"agent\": my_agent.run,\n   })\n   ```\n\n3. Full LangGraph power:\n   ```python\n   graph = Graph(\n       nodes={...},\n       edges=[...],\n       checkpointer=MemorySaver(),\n       interrupt_before=[\"dangerous_node\"],\n       interrupt_after=[\"checkpoint_node\"],\n   )\n   ```\n\n4. Type-safe state:\n   ```python\n   class WorkflowState(TypedDict):\n       input: str\n       output: str\n\n   graph = Graph[WorkflowState](\n       nodes={...},\n       state_schema=WorkflowState,\n       validate_state=True,\n   )\n   ```",
+  "docstring": "Production-ready workflow graph with zero-config building.\n\nSupports multiple initialization patterns:\n\n1. Simple dict-based (GOAL: minimal boilerplate):\n   ```python\n   graph = Graph(\n       nodes={\n           \"analyze\": analyze_func,\n           \"decide\": decide_func,\n           \"execute\": execute_func,\n       },\n       edges=[\n           (\"analyze\", \"decide\"),\n           (\"decide\", \"execute\", lambda state: state[\"should_execute\"]),\n       ],\n       entry=\"analyze\",\n   )\n   ```\n\n2. Any callable as node:\n   ```python\n   graph = Graph(nodes={\n       \"func\": my_function,\n       \"lambda\": lambda state: {\"output\": state[\"input\"] * 2},\n       \"method\": my_instance.method,\n       \"agent\": my_agent.run,\n   })\n   ```\n\n3. Full graph configuration:\n   ```python\n   graph = Graph(\n       nodes={...},\n       edges=[...],\n       checkpointer=MemorySaver(),\n       interrupt_before=[\"dangerous_node\"],\n       interrupt_after=[\"checkpoint_node\"],\n       node_defaults={\"retry_policy\": RetryPolicy(max_attempts=3)},\n       node_policies={\"dangerous_node\": {\"timeout\": 30}},\n   )\n   ```\n\n4. Type-safe state:\n   ```python\n   class WorkflowState(TypedDict):\n       input: str\n       output: str\n\n   graph = Graph[WorkflowState](\n       nodes={...},\n       state_schema=WorkflowState,\n       validate_state=True,\n   )\n   ```",
   "parameters": [
     {
       "name": "nodes",
@@ -67,6 +67,20 @@
       "required": false
     },
     {
+      "name": "node_defaults",
+      "type": "Mapping[str, Any] | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
+      "name": "node_policies",
+      "type": "Mapping[str, Mapping[str, Any]] | None",
+      "default": "None",
+      "description": null,
+      "required": false
+    },
+    {
       "name": "state_type",
       "type": "type | None",
       "default": "None",
@@ -84,7 +98,7 @@
   "methods": [
     {
       "name": "__init__",
-      "signature": "(nodes: dict[str, Any] | Sequence | None = None, edges: Sequence | None = None, entry: str | None = None, state_schema: type | None = None, validate_state: bool = False, checkpointer = None, store = None, interrupt_before: list[str] | None = None, interrupt_after: list[str] | None = None, state_type: type | None = None, node_definitions: Sequence | dict | None = None)",
+      "signature": "(nodes: dict[str, Any] | Sequence | None = None, edges: Sequence | None = None, entry: str | None = None, state_schema: type | None = None, validate_state: bool = False, checkpointer = None, store = None, interrupt_before: list[str] | None = None, interrupt_after: list[str] | None = None, node_defaults: Mapping[str, Any] | None = None, node_policies: Mapping[str, Mapping[str, Any]] | None = None, state_type: type | None = None, node_definitions: Sequence | dict | None = None)",
       "docstring": null,
       "parameters": [
         {
@@ -153,6 +167,20 @@
         {
           "name": "interrupt_after",
           "type": "list[str] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "node_defaults",
+          "type": "Mapping[str, Any] | None",
+          "default": "None",
+          "description": null,
+          "required": false
+        },
+        {
+          "name": "node_policies",
+          "type": "Mapping[str, Mapping[str, Any]] | None",
           "default": "None",
           "description": null,
           "required": false
@@ -570,5 +598,5 @@
   ],
   "bases": [],
   "source_file": "src/ai_infra/graph/graph.py",
-  "source_line": 21
+  "source_line": 26
 }

@@ -16,6 +16,8 @@ from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from langchain.agents.middleware.human_in_the_loop import InterruptOnConfig
+
     from ai_infra.llm.session import SessionConfig
     from ai_infra.llm.workspace import Workspace
 
@@ -32,7 +34,6 @@ try:
         SubAgent,
         SubAgentMiddleware,
     )
-    from deepagents import create_deep_agent as _create_deep_agent
     from langchain.agents.middleware.types import AgentMiddleware
 
     HAS_DEEPAGENTS = True
@@ -74,9 +75,6 @@ except ImportError:
 
         def __init__(self, *args: Any, **kwargs: Any) -> None:
             _missing_deepagents()
-
-    def _create_deep_agent(*args: Any, **kwargs: Any) -> Any:
-        _missing_deepagents()
 
 
 __all__ = [
@@ -125,30 +123,26 @@ def build_deep_agent(
     Raises:
         ImportError: If deepagents package is not installed
     """
-    try:
-        from deepagents import create_deep_agent
-    except ImportError as e:
+    if not HAS_DEEPAGENTS:
         raise ImportError(
             "DeepAgents mode requires 'deepagents' package. Install with: pip install deepagents"
-        ) from e
+        )
+
+    from deepagents import create_deep_agent
 
     # Extract session config
     checkpointer = None
     store = None
-    interrupt_on = None
+    interrupt_on: dict[str, bool | InterruptOnConfig] | None = None
     if session_config:
         checkpointer = session_config.storage.get_checkpointer()
         store = session_config.storage.get_store()
-        # Convert pause_before/pause_after to interrupt_on dict
-        if session_config.pause_before or session_config.pause_after:
+        if session_config.pause_after:
+            raise ValueError("pause_after is not supported for deep agents; use pause_before")
+        if session_config.pause_before:
             interrupt_on = {}
-            for tool_name in session_config.pause_before or []:
-                interrupt_on[tool_name] = {"before": True}
-            for tool_name in session_config.pause_after or []:
-                if tool_name in interrupt_on:
-                    interrupt_on[tool_name]["after"] = True
-                else:
-                    interrupt_on[tool_name] = {"after": True}
+            for tool_name in session_config.pause_before:
+                interrupt_on[tool_name] = True
 
     # Get backend from workspace (if configured)
     backend = None
