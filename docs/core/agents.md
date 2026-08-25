@@ -137,9 +137,13 @@ async for event in agent.astream("Search docs", visibility="detailed"):
         print(f"Calling {event.tool} with {event.arguments}")
 ```
 
-### With LangGraph Config
+The agent uses a typed v2 stream transport internally and continues to yield the
+stable `StreamEvent` contract. Applications should consume `StreamEvent` rather
+than internal stream payloads.
 
-Pass LangGraph config for persistence and tracing:
+### With Execution Config
+
+Pass runtime configuration for persistence and tracing:
 
 ```python
 config = {
@@ -281,6 +285,10 @@ Deep mode automatically provides:
 - Code execution (sandboxed)
 - Multi-step planning
 
+When using sessions with deep mode, configure `pause_before` for tools that
+need approval, then continue with `agent.resume(...)`. Deep mode does not
+support `pause_after`; use `pause_before` for approval workflows.
+
 See [Deep Agent](../features/deep-agent.md) for details.
 
 ---
@@ -319,13 +327,16 @@ class TaskResult(BaseModel):
     message: str
     data: dict
 
-agent = Agent(tools=[my_tool])
-result = agent.run(
-    "Process the data",
-    response_model=TaskResult
+agent = Agent(
+    tools=[my_tool],
+    response_format=TaskResult,
 )
-print(result.success)  # True
+result = agent.run("Process the data")
 ```
+
+`middleware`, `response_format`, and `context_schema` apply in both standard
+and deep agent modes. Configure them when constructing the agent so all run and
+stream methods use the same runtime behavior.
 
 ---
 

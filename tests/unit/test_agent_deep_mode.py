@@ -1,8 +1,12 @@
-"""Tests for Agent(deep=True) mode."""
+"""Tests for Agent deep mode and shared modern configuration."""
 
 from unittest.mock import MagicMock, patch
 
 import pytest
+from deepagents import create_deep_agent
+from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+from langchain_core.messages import AIMessage
+from langgraph.checkpoint.memory import MemorySaver
 
 from ai_infra.llm import Agent, SubAgent
 from ai_infra.llm.session import memory
@@ -45,6 +49,87 @@ class TestAgentDeepMode:
         )
         assert agent._session_config is not None
         assert agent._session_config.storage is session
+
+    def test_deep_agent_rejects_pause_after(self):
+        """Deep agents reject pause_after because their approval API has no equivalent."""
+        with pytest.raises(ValueError, match="pause_after is not supported"):
+            Agent(deep=True, session=memory(), pause_after=["dangerous_tool"])
+
+    def test_deep_agent_pause_before_and_resume(self):
+        """Deep agents translate the public resume API to approval decisions."""
+
+        class ToolBindableFakeMessagesListChatModel(FakeMessagesListChatModel):
+            def bind_tools(self, tools, **kwargs):
+                return self
+
+        def dangerous_tool() -> str:
+            """Return an approved result."""
+            return "approved"
+
+        model = ToolBindableFakeMessagesListChatModel(
+            responses=[
+                AIMessage(
+                    content="",
+                    tool_calls=[{"name": "dangerous_tool", "args": {}, "id": "call-1"}],
+                ),
+                AIMessage(content="complete"),
+            ]
+        )
+        compiled_agent = create_deep_agent(
+            model=model,
+            tools=[dangerous_tool],
+            interrupt_on={"dangerous_tool": True},
+            checkpointer=MemorySaver(),
+        )
+        agent = Agent(
+            deep=True,
+            provider="test",
+            model_name="fake-model",
+            session=memory(),
+            pause_before=["dangerous_tool"],
+        )
+
+        with (
+            patch.object(agent, "_resolve_provider_and_model", return_value=("test", "fake-model")),
+            patch.object(agent, "_build_deep_agent", return_value=compiled_agent),
+        ):
+            paused = agent.run("Run the dangerous tool", session_id="deep-pause")
+            assert paused.paused is True
+            assert paused.pending_action is not None
+            assert paused.pending_action.tool_name == "dangerous_tool"
+
+            resumed = agent.resume("deep-pause")
+
+        assert resumed.paused is False
+        assert resumed.content == "complete"
+
+
+class TestAgentStandardModernConfiguration:
+    """Test modern configuration is shared with standard agents."""
+
+    def test_standard_agent_forwards_modern_configuration(self):
+        """Standard mode forwards configuration that deep mode already accepts."""
+        middleware = MagicMock()
+        response_format = MagicMock()
+
+        class RuntimeContext:
+            pass
+
+        agent = Agent(
+            middleware=[middleware],
+            response_format=response_format,
+            context_schema=RuntimeContext,
+        )
+
+        with patch("ai_infra.llm.agent.rb_make_agent_with_context") as mock_build:
+            mock_build.return_value = (MagicMock(), MagicMock())
+
+            agent._make_agent_with_context(provider="openai")
+
+        call_kwargs = mock_build.call_args[1]
+        assert call_kwargs["middleware"] == [middleware]
+        assert call_kwargs["response_format"] is response_format
+        assert call_kwargs["context_schema"] is RuntimeContext
 
 
 class TestAgentSubagentConversion:
@@ -262,13 +347,8 @@ class TestAgentDeepParams:
 class TestBuildDeepAgent:
     """Test _build_deep_agent method."""
 
-    @patch("ai_infra.llm.agents.deep._create_deep_agent")
-    def test_build_deep_agent_called(self, mock_create):
+    def test_build_deep_agent_called(self):
         """_build_deep_agent calls create_deep_agent."""
-        mock_create.return_value = MagicMock()
-        mock_create.return_value.invoke = MagicMock(
-            return_value={"messages": [MagicMock(content="test")]}
-        )
 
         agent = Agent(deep=True, provider="openai")
         # We'd need to mock more to fully test run(), so just test the method exists

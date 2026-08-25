@@ -1,6 +1,6 @@
 # Graph Class
 
-> LangGraph workflows with typed state and conditional branching.
+> Stateful workflows with typed state and conditional branching.
 
 ## Quick Start
 
@@ -156,6 +156,41 @@ for event in graph.stream(initial_state):
     print(f"Node: {event['node']}")
     print(f"State: {event['state']}")
 ```
+
+---
+
+## Resilience Policies
+
+Pass ai-infra graph policy objects through `node_defaults` to protect every
+node, then use `node_policies` only where a node needs an override. Per-node
+values take precedence over graph defaults.
+
+```python
+from ai_infra.graph import RetryPolicy, TimeoutPolicy
+
+graph = Graph(
+    nodes={
+        "fetch": fetch_context,
+        "respond": generate_response,
+    },
+    edges=[("fetch", "respond")],
+    node_defaults={
+        "retry_policy": RetryPolicy(
+            initial_interval=0.5,
+            max_attempts=3,
+        ),
+    },
+    node_policies={
+        "fetch": {
+            "timeout": TimeoutPolicy(run_timeout=15),
+        },
+    },
+)
+```
+
+`node_defaults` accepts `retry_policy`, `cache_policy`, `error_handler`, and
+`timeout`. `node_policies` additionally accepts `trace_policy`. Timeout policies
+require async nodes because synchronous Python work cannot be safely cancelled.
 
 ---
 

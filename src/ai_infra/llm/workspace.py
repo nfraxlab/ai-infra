@@ -11,7 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from deepagents.backends import BaseBackend  # type: ignore[import-untyped]
+    from deepagents.backends import BackendProtocol
 
 WorkspaceMode = Literal["virtual", "sandboxed", "full"]
 
@@ -67,7 +67,7 @@ class Workspace:
         self.root = Path(root).resolve()
         self.mode = mode
 
-    def get_deepagent_backend(self) -> BaseBackend:
+    def get_deepagent_backend(self) -> BackendProtocol:
         """Get the deepagents backend for this workspace.
 
         Returns:

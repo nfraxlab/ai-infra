@@ -508,6 +508,17 @@ def get_pending_action(result: Any) -> PendingAction | None:
             first = interrupt_data[0]
             value = getattr(first, "value", first) if hasattr(first, "value") else first
             if isinstance(value, dict):
+                action_requests = value.get("action_requests")
+                if isinstance(action_requests, list) and action_requests:
+                    action_request = action_requests[0]
+                    if isinstance(action_request, dict):
+                        return PendingAction(
+                            id=getattr(first, "id", str(uuid.uuid4())),
+                            action_type="tool_call",
+                            tool_name=action_request.get("name"),
+                            args=action_request.get("args", {}),
+                            message=action_request.get("description"),
+                        )
                 return PendingAction(
                     id=value.get("id", str(uuid.uuid4())),
                     action_type=value.get("action_type", "tool_call"),

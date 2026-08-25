@@ -272,6 +272,12 @@ class Agent(BaseLLM):
                 pause_before: Tool names to pause before executing (requires session).
                     The agent will return a SessionResult with paused=True.
                 pause_after: Tool names to pause after executing (requires session).
+                    Not supported for deep agents; use pause_before instead.
+
+            Modern Agent Runtime:
+                middleware: Additional middleware applied in standard and deep modes.
+                response_format: Structured output format for agent responses in both modes.
+                context_schema: Schema for runtime context in both modes.
 
             DeepAgents Mode (autonomous multi-step tasks):
                 deep: Enable DeepAgents mode for autonomous task execution.
@@ -281,9 +287,6 @@ class Agent(BaseLLM):
                 subagents: List of agents for delegation. Can be Agent instances
                     (automatically converted) or SubAgent dicts. Agent instances
                     must have name and description set.
-                middleware: Additional middleware to apply to the deep agent.
-                response_format: Structured output format for agent responses.
-                context_schema: Schema for the deep agent context.
                 use_longterm_memory: Enable long-term memory (requires session with store).
 
             Workspace Configuration:
@@ -322,6 +325,8 @@ class Agent(BaseLLM):
         self._callbacks: CallbackManager | None = normalize_callbacks(callbacks)
 
         # DeepAgents mode config
+        if deep and session and pause_after:
+            raise ValueError("pause_after is not supported for deep agents; use pause_before")
         self._deep = deep
         self._subagents = self._convert_subagents(subagents) if subagents else None
         self._middleware = middleware
@@ -886,7 +891,7 @@ class Agent(BaseLLM):
         """Stream agent responses as normalized, typed events.
 
         This is the recommended way to stream agent responses in applications.
-        Unlike astream_agent_tokens() which yields raw LangChain message chunks,
+        Unlike astream_agent_tokens() which yields raw message chunks,
         this method yields clean StreamEvent objects ready for any framework.
 
         Args:
@@ -904,13 +909,13 @@ class Agent(BaseLLM):
                 - "detailed": + tool arguments
                 - "debug": + tool result previews
 
-            stream_mode: LangGraph stream mode(s) - passed through to underlying graph
+            stream_mode: Graph stream mode(s) - passed through to the runtime
                 Supports: "messages", "values", "updates", "custom", "debug"
 
-            config: Full LangGraph RunnableConfig for advanced use cases
+            config: Runtime configuration for advanced use cases
                 - config["configurable"]["thread_id"] for persistence
                 - config["tags"] for tracing
-                - Any other LangGraph config options
+                - Any other supported runtime configuration options
 
             stream_config: Advanced streaming configuration (StreamConfig)
             tool_controls: Tool calling controls (tool_choice, parallel_tool_calls, force_once)
@@ -976,13 +981,13 @@ class Agent(BaseLLM):
         eff_tool_controls = tool_controls if tool_controls is not None else legacy_tool_controls
 
         # Resolve effective system prompt: per-call kwarg takes precedence over constructor default.
-        # System is passed to create_react_agent as a state modifier (prompt=) so it is applied
+        # System is passed to the agent factory as a state modifier so it is applied
         # at inference time and NOT stored in the checkpointer state.  This prevents duplicate
         # system messages when the same thread_id is reused across consecutive astream() calls.
         eff_system = system or self._system
 
         # Build messages — prepend history turns, then the current user prompt.
-        # System is handled via create_react_agent prompt, not as a message.
+        # System is handled by the agent factory, not as a message.
         messages: list[dict[str, Any]] = []
         if history:
             messages.extend(history)
@@ -1478,6 +1483,22 @@ class Agent(BaseLLM):
 
         config = self._session_config.get_config(session_id)
 
+        if self._deep:
+            deep_agent = self._build_deep_agent(eff_provider, eff_model)
+            result = deep_agent.invoke(
+                Command(
+                    resume=self._build_deep_resume_payload(
+                        deep_agent,
+                        config,
+                        approved=approved,
+                        modified_args=modified_args,
+                        reason=reason,
+                    )
+                ),
+                config=config,
+            )
+            return self._make_session_result(result, session_id)
+
         # Get compiled agent
         agent, context = self._make_agent_with_context(
             eff_provider,
@@ -1538,6 +1559,22 @@ class Agent(BaseLLM):
 
         config = self._session_config.get_config(session_id)
 
+        if self._deep:
+            deep_agent = self._build_deep_agent(eff_provider, eff_model)
+            result = await deep_agent.ainvoke(
+                Command(
+                    resume=self._build_deep_resume_payload(
+                        deep_agent,
+                        config,
+                        approved=approved,
+                        modified_args=modified_args,
+                        reason=reason,
+                    )
+                ),
+                config=config,
+            )
+            return self._make_session_result(result, session_id)
+
         # Get compiled agent
         agent, context = self._make_agent_with_context(
             eff_provider,
@@ -1554,6 +1591,52 @@ class Agent(BaseLLM):
         )
 
         return self._make_session_result(result, session_id)
+
+    @staticmethod
+    def _build_deep_resume_payload(
+        deep_agent: Any,
+        config: dict[str, Any],
+        *,
+        approved: bool,
+        modified_args: dict[str, Any] | None,
+        reason: str | None,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Translate the public resume options into deep-agent approval decisions."""
+        state = deep_agent.get_state(config)
+        messages = getattr(state, "values", {}).get("messages", [])
+        pending_tool_calls: list[dict[str, Any]] = []
+        for message in reversed(messages):
+            tool_calls = getattr(message, "tool_calls", None)
+            if tool_calls:
+                pending_tool_calls = list(tool_calls)
+                break
+
+        if not pending_tool_calls:
+            raise ValueError("No pending deep-agent tool call found for this session")
+
+        if approved and modified_args is None:
+            return {"decisions": [{"type": "approve"} for _ in pending_tool_calls]}
+
+        if not approved:
+            decision: dict[str, Any] = {"type": "reject"}
+            if reason:
+                decision["message"] = reason
+            return {"decisions": [decision.copy() for _ in pending_tool_calls]}
+
+        if len(pending_tool_calls) != 1:
+            raise ValueError("modified_args requires exactly one pending deep-agent tool call")
+
+        tool_name = pending_tool_calls[0].get("name")
+        if not tool_name:
+            raise ValueError("No pending deep-agent tool call found for this session")
+        return {
+            "decisions": [
+                {
+                    "type": "edit",
+                    "edited_action": {"name": tool_name, "args": modified_args},
+                }
+            ]
+        }
 
     def _make_agent_with_context(
         self,
@@ -1620,6 +1703,9 @@ class Agent(BaseLLM):
             recursion_limit=self._recursion_limit,
             # System prompt applied as state modifier (not stored in session state)
             system=system,
+            middleware=list(self._middleware) if self._middleware else None,
+            response_format=self._response_format,
+            context_schema=self._context_schema,
         )
 
     def _merge_recursion_limit_config(
@@ -1630,7 +1716,7 @@ class Agent(BaseLLM):
         """Merge recursion_limit from context into config for runtime safety limits.
 
         LangGraph requires recursion_limit to be passed at runtime to invoke()/astream()
-        via the config dict, NOT to create_react_agent().
+        via the config dict, not to create_agent().
 
         Args:
             context: ModelSettings context containing recursion_limit in extra
@@ -1935,12 +2021,14 @@ class Agent(BaseLLM):
         merged_config = self._merge_recursion_limit_config(context, config)
 
         token_index = 0
-        async for token, meta in agent.astream(
+        async for part in agent.astream(
             {"messages": messages},
             context=context,
             config=merged_config,
             stream_mode="messages",
+            version="v2",
         ):
+            token, meta = self._unpack_message_stream_part(part)
             # Fire token callback
             if self._callbacks and hasattr(token, "content") and token.content:
                 from ai_infra.callbacks import LLMTokenEvent
@@ -1955,6 +2043,18 @@ class Agent(BaseLLM):
                 )
                 token_index += 1
             yield token, meta
+
+    @staticmethod
+    def _unpack_message_stream_part(part: Any) -> tuple[Any, dict[str, Any]]:
+        """Convert a LangGraph v2 messages part into the established token tuple."""
+        if not isinstance(part, dict) or part.get("type") != "messages":
+            raise ValueError("Expected a LangGraph v2 messages stream part")
+
+        data = part.get("data")
+        if not isinstance(data, tuple) or len(data) != 2 or not isinstance(data[1], dict):
+            raise ValueError("Invalid LangGraph v2 messages stream part")
+
+        return data
 
     def agent(
         self,

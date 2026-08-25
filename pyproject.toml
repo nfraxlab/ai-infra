@@ -39,11 +39,11 @@ python-dotenv = ">=1.0.0"
 pyyaml = ">=6.0"
 
 # LangChain core (always required)
-langgraph = ">=1.0.0"
-langchain = ">=1.0.0"
+langgraph = ">=1.2.0,<1.3.0"
+langchain = ">=1.3.0,<1.4.0"
 langchain-openai = ">=1.0.0"
 langchain-mcp-adapters = ">=0.1.0"
-langsmith = ">=0.4.0"
+langsmith = ">=0.11.0,<0.12.0"
 
 # Optional LLM provider packages (install via extras)
 langchain-xai = { version = ">=1.0.0", optional = true }
@@ -60,8 +60,8 @@ pydantic-evals = ">=0.1.0"
 # Raw provider SDKs for models.list() discovery
 google-genai = { version = ">=1.0.0", optional = true }
 
-# DeepAgents - autonomous agent orchestration (0.2.x adds backends module)
-deepagents = ">=0.2.0"
+# DeepAgents - autonomous agent orchestration
+deepagents = ">=0.7.0,<0.8.0"
 defusedxml = ">=0.7.1"
 
 # GitHub Copilot SDK - computer automation runtime (optional)

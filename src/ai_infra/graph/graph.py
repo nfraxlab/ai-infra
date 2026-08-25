@@ -1,4 +1,4 @@
-from collections.abc import AsyncIterator, Iterator, Sequence
+from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from typing import Any
 
 from langgraph.constants import END, START
@@ -16,6 +16,11 @@ from ai_infra.graph.utils import (
     validate_state_against_schema,
     wrap_node,
 )
+
+_NODE_POLICY_KEYS = frozenset(
+    {"retry_policy", "cache_policy", "error_handler", "timeout", "trace_policy"}
+)
+_NODE_DEFAULT_KEYS = _NODE_POLICY_KEYS - {"trace_policy"}
 
 
 class Graph:
@@ -50,7 +55,7 @@ class Graph:
        })
        ```
 
-    3. Full LangGraph power:
+    3. Full graph configuration:
        ```python
        graph = Graph(
            nodes={...},
@@ -58,6 +63,8 @@ class Graph:
            checkpointer=MemorySaver(),
            interrupt_before=["dangerous_node"],
            interrupt_after=["checkpoint_node"],
+           node_defaults={"retry_policy": RetryPolicy(max_attempts=3)},
+           node_policies={"dangerous_node": {"timeout": 30}},
        )
        ```
 
@@ -89,6 +96,8 @@ class Graph:
         store=None,
         interrupt_before: list[str] | None = None,
         interrupt_after: list[str] | None = None,
+        node_defaults: Mapping[str, Any] | None = None,
+        node_policies: Mapping[str, Mapping[str, Any]] | None = None,
         # Legacy API (backward compatible)
         state_type: type | None = None,
         node_definitions: Sequence | dict | None = None,
@@ -129,6 +138,12 @@ class Graph:
         self._store = store
         self._interrupt_before = interrupt_before or []
         self._interrupt_after = interrupt_after or []
+        self._node_defaults = self._normalize_node_policy_options(
+            node_defaults,
+            allowed_keys=_NODE_DEFAULT_KEYS,
+            label="node_defaults",
+        )
+        self._node_policies = self._normalize_node_policies(node_policies, node_names)
 
         # Build and compile graph
         self.graph = self._build_graph().compile(
@@ -140,14 +155,58 @@ class Graph:
 
     def _build_graph(self, node_items=None, sync: bool = False) -> StateGraph:
         wf = StateGraph(self.state_type)  # type: ignore[type-var]
+        if self._node_defaults:
+            wf.set_node_defaults(**self._node_defaults)
         node_items = node_items or self.node_definitions
         for name, fn in node_items:
-            wf.add_node(name, wrap_node(fn, sync))
+            wf.add_node(name, wrap_node(fn, sync), **self._node_policies.get(name, {}))
         for start, router_fn, path_map in self.conditional_edges:
             wf.add_conditional_edges(start, wrap_node(router_fn, sync), path_map)
         for start, end in self.edges:
             wf.add_edge(start, end)
         return wf
+
+    @staticmethod
+    def _normalize_node_policy_options(
+        options: Mapping[str, Any] | None,
+        *,
+        allowed_keys: frozenset[str],
+        label: str,
+    ) -> dict[str, Any]:
+        if options is None:
+            return {}
+        if not isinstance(options, Mapping):
+            raise ValueError(f"{label} must be a mapping of native LangGraph policy options")
+
+        unknown_keys = set(options) - allowed_keys
+        if unknown_keys:
+            keys = ", ".join(sorted(unknown_keys))
+            raise ValueError(f"{label} contains unsupported policy options: {keys}")
+        return dict(options)
+
+    def _normalize_node_policies(
+        self,
+        policies: Mapping[str, Mapping[str, Any]] | None,
+        node_names: Sequence[str],
+    ) -> dict[str, dict[str, Any]]:
+        if policies is None:
+            return {}
+        if not isinstance(policies, Mapping):
+            raise ValueError("node_policies must map node names to policy options")
+
+        unknown_nodes = set(policies) - set(node_names)
+        if unknown_nodes:
+            names = ", ".join(sorted(unknown_nodes))
+            raise ValueError(f"node_policies contains unknown nodes: {names}")
+
+        return {
+            name: self._normalize_node_policy_options(
+                options,
+                allowed_keys=_NODE_POLICY_KEYS,
+                label=f"node_policies[{name!r}]",
+            )
+            for name, options in policies.items()
+        }
 
     def _prepare_run(
         self,
